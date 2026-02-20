@@ -1,0 +1,119 @@
+openapi: 3.0.3
+info:
+  title: Base API Infra
+  version: 0.1.0
+paths:
+  /livez:
+    x-ogen-operation-group: Infra
+    get:
+      operationId: getLivez
+      summary: Liveness probe endpoint
+      responses:
+        "200":
+          description: Service process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+        default:
+          $ref: "#/components/responses/DefaultError"
+  /readyz:
+    x-ogen-operation-group: Infra
+    get:
+      operationId: getReadyz
+      summary: Readiness probe endpoint
+      responses:
+        "200":
+          description: Service is ready to accept traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+        default:
+          $ref: "#/components/responses/DefaultError"
+  /healthz:
+    x-ogen-operation-group: Infra
+    get:
+      operationId: getHealthz
+      summary: Service health summary endpoint
+      responses:
+        "200":
+          description: Service health summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        default:
+          $ref: "#/components/responses/DefaultError"
+  /metrics:
+    x-ogen-operation-group: Infra
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics endpoint
+      responses:
+        "200":
+          description: Metrics payload in Prometheus text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/DefaultError"
+  /swagger:
+    x-ogen-operation-group: Infra
+    get:
+      operationId: getSwagger
+      summary: OpenAPI documentation endpoint
+      responses:
+        "200":
+          description: Swagger UI or API reference HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/DefaultError"
+components:
+  responses:
+    DefaultError:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ProbeResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - timestamp
+        - environment
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        timestamp:
+          type: string
+        environment:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string

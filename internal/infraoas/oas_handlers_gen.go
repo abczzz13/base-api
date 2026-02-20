@@ -181,7 +181,8 @@ func (s *Server) handleGetLivezRequest(args [0]string, argsEscaped bool, w http.
 
 // handleGetMetricsRequest handles getMetrics operation.
 //
-// Prometheus metrics endpoint.
+// Exposes metrics through the Prometheus HTTP handler with content negotiation and optional
+// compression.
 //
 // GET /metrics
 func (s *Server) handleGetMetricsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -195,7 +196,7 @@ func (s *Server) handleGetMetricsRequest(args [0]string, argsEscaped bool, w htt
 
 	var rawBody []byte
 
-	var response GetMetricsOK
+	var response GetMetricsRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -211,7 +212,7 @@ func (s *Server) handleGetMetricsRequest(args [0]string, argsEscaped bool, w htt
 		type (
 			Request  = struct{}
 			Params   = struct{}
-			Response = GetMetricsOK
+			Response = GetMetricsRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,

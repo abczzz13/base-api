@@ -50,17 +50,17 @@ func TestGeneratedRoutersBehavior(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:       "infra metrics route returns placeholder error",
+			name:       "infra metrics route surfaces middleware wiring issue",
 			handler:    infraHandler,
 			method:     http.MethodGet,
 			path:       "/metrics",
-			wantStatus: http.StatusNotImplemented,
+			wantStatus: http.StatusInternalServerError,
 			wantHeaders: map[string]string{
 				"Content-Type": "application/json; charset=utf-8",
 			},
 			wantJSON: map[string]any{
-				"code":    "metrics_not_configured",
-				"message": "metrics endpoint is not configured",
+				"code":    "metrics_route_misconfigured",
+				"message": "metrics endpoint should be handled by infra HTTP middleware",
 			},
 		},
 		{
@@ -104,18 +104,17 @@ func TestGeneratedRoutersBehavior(t *testing.T) {
 				}
 			}
 
-			if tt.wantJSON == nil {
-				return
+			if tt.wantJSON != nil {
+				var gotJSON map[string]any
+				if err := json.Unmarshal(rr.Body.Bytes(), &gotJSON); err != nil {
+					t.Fatalf("decode json body: %v", err)
+				}
+
+				if diff := cmp.Diff(tt.wantJSON, gotJSON); diff != "" {
+					t.Fatalf("json body mismatch (-want +got):\n%s", diff)
+				}
 			}
 
-			var gotJSON map[string]any
-			if err := json.Unmarshal(rr.Body.Bytes(), &gotJSON); err != nil {
-				t.Fatalf("decode json body: %v", err)
-			}
-
-			if diff := cmp.Diff(tt.wantJSON, gotJSON); diff != "" {
-				t.Fatalf("json body mismatch (-want +got):\n%s", diff)
-			}
 		})
 	}
 }

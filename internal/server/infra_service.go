@@ -62,13 +62,13 @@ func (s *infraService) GetHealthz(ctx context.Context) (*infraoas.HealthResponse
 	}, nil
 }
 
-func (s *infraService) GetMetrics(ctx context.Context) (infraoas.GetMetricsOK, error) {
+func (s *infraService) GetMetrics(ctx context.Context) (infraoas.GetMetricsRes, error) {
 	_ = ctx
 
-	return infraoas.GetMetricsOK{}, newInfraDefaultError(
-		http.StatusNotImplemented,
-		"metrics_not_configured",
-		"metrics endpoint is not configured",
+	return nil, newInfraDefaultError(
+		http.StatusInternalServerError,
+		"metrics_route_misconfigured",
+		"metrics endpoint should be handled by infra HTTP middleware",
 	)
 }
 

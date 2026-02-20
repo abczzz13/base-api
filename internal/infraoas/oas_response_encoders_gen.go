@@ -37,19 +37,39 @@ func encodeGetLivezResponse(response *ProbeResponse, w http.ResponseWriter) erro
 	return nil
 }
 
-func encodeGetMetricsResponse(response GetMetricsOK, w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(200)
+func encodeGetMetricsResponse(response GetMetricsRes, w http.ResponseWriter) error {
+	switch response := response.(type) {
+	case *GetMetricsOKApplicationOpenmetricsText:
+		w.Header().Set("Content-Type", "application/openmetrics-text")
+		w.WriteHeader(200)
 
-	writer := w
-	if closer, ok := response.Data.(io.Closer); ok {
-		defer closer.Close()
-	}
-	if _, err := io.Copy(writer, response); err != nil {
-		return errors.Wrap(err, "write")
-	}
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
 
-	return nil
+		return nil
+
+	case *GetMetricsOKTextPlain:
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(200)
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
 }
 
 func encodeGetReadyzResponse(response *ProbeResponse, w http.ResponseWriter) error {

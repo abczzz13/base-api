@@ -74,19 +74,37 @@ func (s *ErrorResponse) SetRequestId(val OptString) {
 	s.RequestId = val
 }
 
-type GetMetricsOK struct {
+type GetMetricsOKApplicationOpenmetricsText struct {
 	Data io.Reader
 }
 
 // Read reads data from the Data reader.
 //
 // Kept to satisfy the io.Reader interface.
-func (s GetMetricsOK) Read(p []byte) (n int, err error) {
+func (s GetMetricsOKApplicationOpenmetricsText) Read(p []byte) (n int, err error) {
 	if s.Data == nil {
 		return 0, io.EOF
 	}
 	return s.Data.Read(p)
 }
+
+func (*GetMetricsOKApplicationOpenmetricsText) getMetricsRes() {}
+
+type GetMetricsOKTextPlain struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetMetricsOKTextPlain) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*GetMetricsOKTextPlain) getMetricsRes() {}
 
 type GetSwaggerOK struct {
 	Data io.Reader

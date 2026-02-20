@@ -50,11 +50,15 @@ paths:
     get:
       operationId: getMetrics
       summary: Prometheus metrics endpoint
+      description: Exposes metrics through the Prometheus HTTP handler with content negotiation and optional compression.
       responses:
         "200":
-          description: Metrics payload in Prometheus text exposition format
+          description: Metrics payload in Prometheus text exposition format (for example text/plain; version=0.0.4 or application/openmetrics-text).
           content:
             text/plain:
+              schema:
+                type: string
+            application/openmetrics-text:
               schema:
                 type: string
         default:

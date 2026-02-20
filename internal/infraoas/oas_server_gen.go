@@ -33,10 +33,11 @@ type InfraHandler interface {
 	GetLivez(ctx context.Context) (*ProbeResponse, error)
 	// GetMetrics implements getMetrics operation.
 	//
-	// Prometheus metrics endpoint.
+	// Exposes metrics through the Prometheus HTTP handler with content negotiation and optional
+	// compression.
 	//
 	// GET /metrics
-	GetMetrics(ctx context.Context) (GetMetricsOK, error)
+	GetMetrics(ctx context.Context) (GetMetricsRes, error)
 	// GetReadyz implements getReadyz operation.
 	//
 	// Readiness probe endpoint.

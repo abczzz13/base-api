@@ -13,6 +13,8 @@ import (
 
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/oas"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type serverResult struct {
@@ -41,8 +43,7 @@ func Run(
 		return fmt.Errorf("create public API server: %w", err)
 	}
 
-	infraService := newInfraService(cfg, defaultReadinessCheckers(cfg)...)
-	infraAPI, err := infraoas.NewServer(infraService)
+	infraHandler, err := newInfraHandler(cfg)
 	if err != nil {
 		return fmt.Errorf("create infra API server: %w", err)
 	}
@@ -62,7 +63,7 @@ func Run(
 			name: "infra",
 			server: &http.Server{
 				Addr:    cfg.InfraAddress,
-				Handler: infraAPI,
+				Handler: infraHandler,
 			},
 		},
 	}
@@ -119,4 +120,23 @@ func Run(
 
 		return nil
 	}
+}
+
+func newInfraHandler(cfg Config) (http.Handler, error) {
+	infraService := newInfraService(cfg, defaultReadinessCheckers(cfg)...)
+	infraAPI, err := infraoas.NewServer(infraService)
+	if err != nil {
+		return nil, err
+	}
+
+	mux := http.NewServeMux()
+	// Keep /metrics in front of the generated OAS router so promhttp can handle
+	// content negotiation and compression directly.
+	mux.Handle("GET /metrics", promhttp.HandlerFor(
+		prometheus.DefaultGatherer,
+		promhttp.HandlerOpts{EnableOpenMetrics: true},
+	))
+	mux.Handle("/", infraAPI)
+
+	return mux, nil
 }

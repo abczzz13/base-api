@@ -100,26 +100,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-			case 'm': // Prefix: "metrics"
-
-				if l := len("metrics"); len(elem) >= l && elem[0:l] == "metrics" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleGetMetricsRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, "GET")
-					}
-
-					return
-				}
-
 			case 'r': // Prefix: "readyz"
 
 				if l := len("readyz"); len(elem) >= l && elem[0:l] == "readyz" {
@@ -133,26 +113,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					switch r.Method {
 					case "GET":
 						s.handleGetReadyzRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, "GET")
-					}
-
-					return
-				}
-
-			case 's': // Prefix: "swagger"
-
-				if l := len("swagger"); len(elem) >= l && elem[0:l] == "swagger" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleGetSwaggerRequest([0]string{}, elemIsEscaped, w, r)
 					default:
 						s.notAllowed(w, r, "GET")
 					}
@@ -310,31 +270,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					}
 				}
 
-			case 'm': // Prefix: "metrics"
-
-				if l := len("metrics"); len(elem) >= l && elem[0:l] == "metrics" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = GetMetricsOperation
-						r.summary = "Prometheus metrics endpoint"
-						r.operationID = "getMetrics"
-						r.operationGroup = "Infra"
-						r.pathPattern = "/metrics"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
-				}
-
 			case 'r': // Prefix: "readyz"
 
 				if l := len("readyz"); len(elem) >= l && elem[0:l] == "readyz" {
@@ -352,31 +287,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						r.operationID = "getReadyz"
 						r.operationGroup = "Infra"
 						r.pathPattern = "/readyz"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
-				}
-
-			case 's': // Prefix: "swagger"
-
-				if l := len("swagger"); len(elem) >= l && elem[0:l] == "swagger" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = GetSwaggerOperation
-						r.summary = "OpenAPI documentation endpoint"
-						r.operationID = "getSwagger"
-						r.operationGroup = "Infra"
-						r.pathPattern = "/swagger"
 						r.args = args
 						r.count = 0
 						return r, true

@@ -8,7 +8,5 @@ type OperationName = string
 const (
 	GetHealthzOperation OperationName = "GetHealthz"
 	GetLivezOperation   OperationName = "GetLivez"
-	GetMetricsOperation OperationName = "GetMetrics"
 	GetReadyzOperation  OperationName = "GetReadyz"
-	GetSwaggerOperation OperationName = "GetSwagger"
 )

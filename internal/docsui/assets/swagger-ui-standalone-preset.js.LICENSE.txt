@@ -1,0 +1,9 @@
+swagger-ui-standalone-preset.js
+
+Bundled from swagger-ui-dist@5.17.14.
+License: Apache-2.0.
+
+Copyright 2020-2021 SmartBear Software Inc.
+
+See https://unpkg.com/swagger-ui-dist@5.17.14/LICENSE and
+https://unpkg.com/swagger-ui-dist@5.17.14/NOTICE for upstream license and notice text.

@@ -62,26 +62,6 @@ func (s *infraService) GetHealthz(ctx context.Context) (*infraoas.HealthResponse
 	}, nil
 }
 
-func (s *infraService) GetMetrics(ctx context.Context) (infraoas.GetMetricsRes, error) {
-	_ = ctx
-
-	return nil, newInfraDefaultError(
-		http.StatusInternalServerError,
-		"metrics_route_misconfigured",
-		"metrics endpoint should be handled by infra HTTP middleware",
-	)
-}
-
-func (s *infraService) GetSwagger(ctx context.Context) (infraoas.GetSwaggerOK, error) {
-	_ = ctx
-
-	return infraoas.GetSwaggerOK{}, newInfraDefaultError(
-		http.StatusNotImplemented,
-		"docs_not_configured",
-		"swagger endpoint is not configured",
-	)
-}
-
 func (s *infraService) NewError(ctx context.Context, err error) *infraoas.DefaultErrorStatusCode {
 	_ = ctx
 	_ = err

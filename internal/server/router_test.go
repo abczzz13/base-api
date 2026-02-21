@@ -50,39 +50,31 @@ func TestGeneratedRoutersBehavior(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:       "infra metrics route surfaces middleware wiring issue",
+			name:       "infra liveness endpoint returns safe payload",
 			handler:    infraHandler,
 			method:     http.MethodGet,
-			path:       "/metrics",
-			wantStatus: http.StatusInternalServerError,
+			path:       "/livez",
+			wantStatus: http.StatusOK,
 			wantHeaders: map[string]string{
 				"Content-Type": "application/json; charset=utf-8",
 			},
 			wantJSON: map[string]any{
-				"code":    "metrics_route_misconfigured",
-				"message": "metrics endpoint should be handled by infra HTTP middleware",
+				"status": "OK",
 			},
 		},
 		{
-			name:       "infra metrics route rejects unsupported method",
+			name:       "infra metrics route is not exposed by generated router",
 			handler:    infraHandler,
-			method:     http.MethodPost,
+			method:     http.MethodGet,
 			path:       "/metrics",
-			wantStatus: http.StatusMethodNotAllowed,
-			wantHeaders: map[string]string{
-				"Allow": "GET",
-			},
+			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:       "infra options exposes allowed methods",
+			name:       "infra swagger route is not exposed by generated router",
 			handler:    infraHandler,
-			method:     http.MethodOptions,
-			path:       "/metrics",
-			wantStatus: http.StatusNoContent,
-			wantHeaders: map[string]string{
-				"Access-Control-Allow-Methods": "GET",
-				"Access-Control-Allow-Headers": "Content-Type",
-			},
+			method:     http.MethodGet,
+			path:       "/swagger",
+			wantStatus: http.StatusNotFound,
 		},
 	}
 

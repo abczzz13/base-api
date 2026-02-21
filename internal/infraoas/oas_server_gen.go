@@ -31,25 +31,12 @@ type InfraHandler interface {
 	//
 	// GET /livez
 	GetLivez(ctx context.Context) (*ProbeResponse, error)
-	// GetMetrics implements getMetrics operation.
-	//
-	// Exposes metrics through the Prometheus HTTP handler with content negotiation and optional
-	// compression.
-	//
-	// GET /metrics
-	GetMetrics(ctx context.Context) (GetMetricsRes, error)
 	// GetReadyz implements getReadyz operation.
 	//
 	// Readiness probe endpoint.
 	//
 	// GET /readyz
 	GetReadyz(ctx context.Context) (*ProbeResponse, error)
-	// GetSwagger implements getSwagger operation.
-	//
-	// OpenAPI documentation endpoint.
-	//
-	// GET /swagger
-	GetSwagger(ctx context.Context) (GetSwaggerOK, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

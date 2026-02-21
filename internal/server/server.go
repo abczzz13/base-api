@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abczzz13/base-api/internal/docsui"
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/oas"
 	"github.com/prometheus/client_golang/prometheus"
@@ -130,12 +131,12 @@ func newInfraHandler(cfg Config) (http.Handler, error) {
 	}
 
 	mux := http.NewServeMux()
-	// Keep /metrics in front of the generated OAS router so promhttp can handle
-	// content negotiation and compression directly.
+	// Keep manual infra/docs routes in front of the generated OAS router.
 	mux.Handle("GET /metrics", promhttp.HandlerFor(
 		prometheus.DefaultGatherer,
 		promhttp.HandlerOpts{EnableOpenMetrics: true},
 	))
+	docsui.Register(mux)
 	mux.Handle("/", infraAPI)
 
 	return mux, nil

@@ -7,21 +7,71 @@ golangci_lint_version := "v2.10.1"
 yamlfmt_version := "v0.21.0"
 gofumpt_version := "v0.9.2"
 goimports_version := "v0.42.0"
+govulncheck_version := "v1.1.4"
+gitleaks_version := "v8.30.0"
 goimports_local_prefix := "github.com/abczzz13/base-api"
 bin_dir := ".bin"
 golangci_lint := ".bin/golangci-lint"
 yamlfmt := ".bin/yamlfmt"
 gofumpt := ".bin/gofumpt"
 goimports := ".bin/goimports"
+govulncheck := ".bin/govulncheck"
+gitleaks := ".bin/gitleaks"
+docker_compose := "docker compose --env-file .env"
+go_api_package := "./cmd/api"
 yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows"
 
 default:
     @just --list
 
-ci: tools check
+ci: tools check security
 
 # Expected local pre-PR quality gate.
-pre-pr: check
+pre-pr: check security
+
+
+[script]
+env-init:
+    if [ -f .env ]; then
+        exit 0
+    fi
+
+    cp .env.example .env
+    printf 'Created .env from .env.example\n'
+
+compose-up: env-init
+    {{docker_compose}} up --build -d
+
+compose-down: env-init
+    {{docker_compose}} down --remove-orphans
+
+compose-logs *args: env-init
+    {{docker_compose}} logs -f {{args}}
+
+compose-build: env-init
+    {{docker_compose}} build
+
+build-go:
+    go build ./...
+
+[script]
+build-api:
+    mkdir -p build
+    go build -o build/api {{go_api_package}}
+
+build-image: env-init
+    {{docker_compose}} build api
+
+build: build-go build-api build-image
+
+[script]
+run-go: env-init
+    set -a
+    source .env
+    set +a
+    go run {{go_api_package}}
+
+run: run-go
 
 
 tools:
@@ -30,6 +80,8 @@ tools:
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/google/yamlfmt/cmd/yamlfmt@{{yamlfmt_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install mvdan.cc/gofumpt@{{gofumpt_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install golang.org/x/tools/cmd/goimports@{{goimports_version}}
+    GOBIN="${PWD}/{{bin_dir}}" go install golang.org/x/vuln/cmd/govulncheck@{{govulncheck_version}}
+    GOBIN="${PWD}/{{bin_dir}}" go install github.com/zricethezav/gitleaks/v8@{{gitleaks_version}}
 
 [script]
 check-tools:
@@ -121,6 +173,33 @@ lint-yaml: check-tools
     {{yamlfmt}} -lint {{yaml_paths}}
 
 lint: lint-go lint-yaml
+
+[script]
+check-security-tools:
+    missing=()
+
+    [ -x "{{govulncheck}}" ] || missing+=("{{govulncheck}}")
+    [ -x "{{gitleaks}}" ] || missing+=("{{gitleaks}}")
+
+    if [ "${#missing[@]}" -ne 0 ]; then
+        printf 'Missing required security tools:\n'
+        printf '  - %s\n' "${missing[@]}"
+        printf 'Install them with: just tools\n'
+        exit 1
+    fi
+
+security-vuln: check-security-tools
+    {{govulncheck}} ./...
+
+[script]
+security-secrets: check-security-tools
+    args=({{gitleaks}} git --redact --exit-code 1 --no-banner)
+    if [ -n "${GITLEAKS_LOG_OPTS:-}" ]; then
+        args+=(--log-opts "$GITLEAKS_LOG_OPTS")
+    fi
+    "${args[@]}"
+
+security: security-vuln security-secrets
 
 test pattern="" *args:
     @echo {{ if pattern == "" { "Running full test suite with shuffle..." } else { if pattern == "--" { "Running full test suite with shuffle..." } else { "Running tests matching pattern: " + pattern } } }}

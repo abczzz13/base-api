@@ -24,6 +24,24 @@ type serverResult struct {
 	err  error
 }
 
+const (
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultReadTimeout       = 15 * time.Second
+	defaultWriteTimeout      = 30 * time.Second
+	defaultIdleTimeout       = 60 * time.Second
+)
+
+func newHTTPServer(cfg Config, addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+	}
+}
+
 func Run(
 	ctx context.Context,
 	args []string,
@@ -37,7 +55,10 @@ func Run(
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	cfg := loadConfig(getenv)
+	cfg, configWarnings := loadConfigWithWarnings(getenv)
+	for _, warning := range configWarnings {
+		_, _ = fmt.Fprintf(stderr, "config warning: %s\n", warning)
+	}
 
 	baseService := newBaseService(cfg)
 	publicAPI, err := oas.NewServer(baseService)
@@ -55,18 +76,12 @@ func Run(
 		server *http.Server
 	}{
 		{
-			name: "public",
-			server: &http.Server{
-				Addr:    cfg.Address,
-				Handler: publicAPI,
-			},
+			name:   "public",
+			server: newHTTPServer(cfg, cfg.Address, publicAPI),
 		},
 		{
-			name: "infra",
-			server: &http.Server{
-				Addr:    cfg.InfraAddress,
-				Handler: infraHandler,
-			},
+			name:   "infra",
+			server: newHTTPServer(cfg, cfg.InfraAddress, infraHandler),
 		},
 	}
 

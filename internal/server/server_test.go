@@ -49,6 +49,38 @@ func TestRunReturnsErrorWhenListenFails(t *testing.T) {
 	}
 }
 
+func TestNewHTTPServerUsesConfiguredTimeouts(t *testing.T) {
+	cfg := Config{
+		ReadHeaderTimeout: 3 * time.Second,
+		ReadTimeout:       11 * time.Second,
+		WriteTimeout:      25 * time.Second,
+		IdleTimeout:       45 * time.Second,
+	}
+	handler := http.NewServeMux()
+	addr := "127.0.0.1:8080"
+
+	srv := newHTTPServer(cfg, addr, handler)
+
+	if srv.Addr != addr {
+		t.Fatalf("Addr mismatch: want %q, got %q", addr, srv.Addr)
+	}
+	if srv.Handler != handler {
+		t.Fatalf("Handler mismatch: got unexpected handler")
+	}
+	if srv.ReadHeaderTimeout != cfg.ReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout mismatch: want %s, got %s", cfg.ReadHeaderTimeout, srv.ReadHeaderTimeout)
+	}
+	if srv.ReadTimeout != cfg.ReadTimeout {
+		t.Fatalf("ReadTimeout mismatch: want %s, got %s", cfg.ReadTimeout, srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != cfg.WriteTimeout {
+		t.Fatalf("WriteTimeout mismatch: want %s, got %s", cfg.WriteTimeout, srv.WriteTimeout)
+	}
+	if srv.IdleTimeout != cfg.IdleTimeout {
+		t.Fatalf("IdleTimeout mismatch: want %s, got %s", cfg.IdleTimeout, srv.IdleTimeout)
+	}
+}
+
 func TestNewInfraHandlerRoutesMetricsThroughPromHTTP(t *testing.T) {
 	handler, err := newInfraHandler(Config{Environment: "test"})
 	if err != nil {

@@ -11,11 +11,10 @@ services:
         BUILD_TIME: ${BUILD_TIME:-unknown}
     ports:
       - "${API_PORT:-8080}:8080"
+    env_file:
+      - .env
     environment:
-      API_ADDR: 0.0.0.0:8080
-      API_INFRA_ADDR: ${API_INFRA_ADDR:-127.0.0.1:9090}
-      API_ENVIRONMENT: ${API_ENVIRONMENT:-development}
-      API_READYZ_TIMEOUT: ${API_READYZ_TIMEOUT:-2s}
+      API_ADDR: ${API_ADDR:-0.0.0.0:8080}
     init: true
     restart: unless-stopped
     read_only: true

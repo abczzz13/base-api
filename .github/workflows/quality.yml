@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -24,5 +26,32 @@ jobs:
         with:
           path: .bin
           key: ${{ runner.os }}-bin-${{ hashFiles('justfile') }}
+      - name: Scope gitleaks scan
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "GITLEAKS_LOG_OPTS=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" >> "$GITHUB_ENV"
+          elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            echo "GITLEAKS_LOG_OPTS=${{ github.event.before }}..${{ github.sha }}" >> "$GITHUB_ENV"
+          else
+            echo "GITLEAKS_LOG_OPTS=--all" >> "$GITHUB_ENV"
+          fi
       - name: Run checks
         run: just ci
+      - name: Run Trivy config scan
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Build runtime image
+        run: docker build --target runner -t base-api:ci .
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          image-ref: base-api:ci
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

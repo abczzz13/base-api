@@ -1,0 +1,5 @@
+line_ending: lf
+formatter:
+  type: basic
+  indent: 2
+  eof_newline: true

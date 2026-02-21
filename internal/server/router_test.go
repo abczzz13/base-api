@@ -6,9 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/oas"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestGeneratedRoutersBehavior(t *testing.T) {
@@ -106,7 +107,6 @@ func TestGeneratedRoutersBehavior(t *testing.T) {
 					t.Fatalf("json body mismatch (-want +got):\n%s", diff)
 				}
 			}
-
 		})
 	}
 }

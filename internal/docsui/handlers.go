@@ -8,7 +8,6 @@ import (
 )
 
 func handleSwaggerUI(w http.ResponseWriter, _ *http.Request) {
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", swaggerPageCacheTTL)
 	w.Header().Set("Content-Security-Policy", swaggerUIContentSecurityPolicy)

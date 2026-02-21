@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/abczzz13/base-api/internal/infraoas"
 )
 
 func TestInfraServiceGetLivez(t *testing.T) {

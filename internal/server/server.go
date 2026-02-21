@@ -11,11 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/abczzz13/base-api/internal/docsui"
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/oas"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type serverResult struct {
@@ -80,8 +81,8 @@ func Run(
 		}(s.name, s.server)
 	}
 
-	fmt.Fprintf(stdout, "public listening on %s (environment=%s)\n", cfg.Address, cfg.Environment)
-	fmt.Fprintf(stdout, "infra listening on %s (internal only)\n", cfg.InfraAddress)
+	_, _ = fmt.Fprintf(stdout, "public listening on %s (environment=%s)\n", cfg.Address, cfg.Environment)
+	_, _ = fmt.Fprintf(stdout, "infra listening on %s (internal only)\n", cfg.InfraAddress)
 
 	shutdownAll := func() error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -106,7 +107,7 @@ func Run(
 		}
 		return fmt.Errorf("%s server stopped unexpectedly", res.name)
 	case <-ctx.Done():
-		fmt.Fprintln(stderr, "shutting down")
+		_, _ = fmt.Fprintln(stderr, "shutting down")
 
 		if err := shutdownAll(); err != nil {
 			return err

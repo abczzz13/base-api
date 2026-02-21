@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/abczzz13/base-api/internal/oas"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/abczzz13/base-api/internal/oas"
 )
 
 func TestBaseServiceGetHealthz(t *testing.T) {

@@ -1,11 +1,53 @@
 package server
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
+
+func TestRunIgnoresStartupWriteErrors(t *testing.T) {
+	assertRunHandlesWriterErrors(t, errWriter{err: errors.New("stdout unavailable")}, io.Discard)
+}
+
+func TestRunIgnoresShutdownWriteErrors(t *testing.T) {
+	assertRunHandlesWriterErrors(t, io.Discard, errWriter{err: errors.New("stderr unavailable")})
+}
+
+func TestRunReturnsErrorWhenListenFails(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := Run(
+		ctx,
+		nil,
+		getenvFromMap(map[string]string{
+			"API_ADDR":        "invalid-address",
+			"API_INFRA_ADDR":  reserveTCPAddress(t),
+			"API_ENVIRONMENT": "test",
+		}),
+		strings.NewReader(""),
+		io.Discard,
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatalf("Run returned nil error for invalid listen address")
+	}
+	if !strings.Contains(err.Error(), "public server listen") {
+		t.Fatalf("Run error does not identify public listener failure: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid-address") {
+		t.Fatalf("Run error does not include invalid address context: %v", err)
+	}
+}
 
 func TestNewInfraHandlerRoutesMetricsThroughPromHTTP(t *testing.T) {
 	handler, err := newInfraHandler(Config{Environment: "test"})
@@ -178,4 +220,136 @@ func TestNewInfraHandlerWiresDocumentationRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+type errWriter struct {
+	err error
+}
+
+func (w errWriter) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+const maxRunStartupAttempts = 5
+
+func assertRunHandlesWriterErrors(t *testing.T, stdout, stderr io.Writer) {
+	t.Helper()
+
+	var lastErr error
+	for attempt := 1; attempt <= maxRunStartupAttempts; attempt++ {
+		publicAddr := reserveTCPAddress(t)
+		infraAddr := reserveTCPAddress(t)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		env := map[string]string{
+			"API_ADDR":        publicAddr,
+			"API_INFRA_ADDR":  infraAddr,
+			"API_ENVIRONMENT": "test",
+		}
+
+		runDone := make(chan struct{})
+		var runErr error
+		go func() {
+			runErr = Run(ctx, nil, getenvFromMap(env), strings.NewReader(""), stdout, stderr)
+			close(runDone)
+		}()
+
+		startupErr := waitForStatusOK("http://"+publicAddr+"/healthz", runDone, &runErr)
+		if startupErr == nil {
+			startupErr = waitForStatusOK("http://"+infraAddr+"/livez", runDone, &runErr)
+		}
+
+		if startupErr != nil {
+			cancel()
+			if !waitForRunDone(runDone, 3*time.Second) {
+				t.Fatalf("Run did not return after failed startup attempt")
+			}
+
+			if isAddressInUseError(startupErr) && attempt < maxRunStartupAttempts {
+				lastErr = startupErr
+				continue
+			}
+
+			t.Fatalf("startup check failed: %v", startupErr)
+		}
+
+		cancel()
+		if !waitForRunDone(runDone, 3*time.Second) {
+			t.Fatalf("Run did not return after cancellation")
+		}
+
+		if runErr != nil {
+			if isAddressInUseError(runErr) && attempt < maxRunStartupAttempts {
+				lastErr = runErr
+				continue
+			}
+
+			t.Fatalf("Run returned error: %v", runErr)
+		}
+
+		return
+	}
+
+	t.Fatalf("Run failed after %d startup attempts: %v", maxRunStartupAttempts, lastErr)
+}
+
+func reserveTCPAddress(t *testing.T) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on ephemeral port: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	return ln.Addr().String()
+}
+
+func waitForStatusOK(url string, runDone <-chan struct{}, runErr *error) error {
+	client := &http.Client{Timeout: 250 * time.Millisecond}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-runDone:
+			if *runErr != nil {
+				return fmt.Errorf("run exited before %s became ready: %w", url, *runErr)
+			}
+			return fmt.Errorf("run exited before %s became ready", url)
+		default:
+		}
+
+		resp, err := client.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	select {
+	case <-runDone:
+		if *runErr != nil {
+			return fmt.Errorf("run exited before %s became ready: %w", url, *runErr)
+		}
+		return fmt.Errorf("run exited before %s became ready", url)
+	default:
+	}
+
+	return fmt.Errorf("timed out waiting for %s", url)
+}
+
+func waitForRunDone(runDone <-chan struct{}, timeout time.Duration) bool {
+	select {
+	case <-runDone:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+func isAddressInUseError(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE)
 }

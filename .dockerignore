@@ -1,0 +1,23 @@
+# VCS
+.git
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Build outputs and caches
+bin/
+dist/
+tmp/
+coverage/
+*.log
+*.out
+
+# Misc
+*.tar

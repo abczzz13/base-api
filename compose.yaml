@@ -1,0 +1,27 @@
+services:
+  api:
+    image: ghcr.io/abczzz13/base-api:${VERSION:-dev}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        VERSION: ${VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      API_ADDR: 0.0.0.0:8080
+      API_INFRA_ADDR: ${API_INFRA_ADDR:-127.0.0.1:9090}
+      API_ENVIRONMENT: ${API_ENVIRONMENT:-development}
+      API_READYZ_TIMEOUT: ${API_READYZ_TIMEOUT:-2s}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

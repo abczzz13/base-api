@@ -9,6 +9,8 @@ type Config struct {
 	Address           string
 	InfraAddress      string
 	Environment       string
+	LogFormat         string
+	LogLevel          string
 	ReadyzTimeout     time.Duration
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration
@@ -26,6 +28,8 @@ func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 		Address:           getenv("API_ADDR"),
 		InfraAddress:      getenv("API_INFRA_ADDR"),
 		Environment:       getenv("API_ENVIRONMENT"),
+		LogFormat:         getenv("LOG_FORMAT"),
+		LogLevel:          getenv("LOG_LEVEL"),
 		ReadyzTimeout:     2 * time.Second,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 		ReadTimeout:       defaultReadTimeout,
@@ -34,7 +38,7 @@ func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 	}
 
 	if cfg.Address == "" {
-		cfg.Address = ":8080"
+		cfg.Address = "0.0.0.0:8080"
 	}
 
 	if cfg.InfraAddress == "" {
@@ -53,8 +57,26 @@ func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 		cfg.Environment = "development"
 	}
 
+	if cfg.LogFormat == "" {
+		cfg.LogFormat = "text"
+	}
+
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = "info"
+	}
+
 	var warnings []string
 	var warning string
+
+	if cfg.LogFormat != "text" && cfg.LogFormat != "json" {
+		warnings = append(warnings, fmt.Sprintf("invalid log format %q, using default \"text\"", cfg.LogFormat))
+		cfg.LogFormat = "text"
+	}
+
+	if cfg.LogLevel != "debug" && cfg.LogLevel != "info" && cfg.LogLevel != "warn" && cfg.LogLevel != "error" {
+		warnings = append(warnings, fmt.Sprintf("invalid log level %q, using default \"info\"", cfg.LogLevel))
+		cfg.LogLevel = "info"
+	}
 
 	cfg.ReadyzTimeout, warning = loadPositiveDurationEnv(getenv, "API_READYZ_TIMEOUT", cfg.ReadyzTimeout)
 	warnings = appendWarning(warnings, warning)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,7 +17,9 @@ import (
 
 	"github.com/abczzz13/base-api/internal/docsui"
 	"github.com/abczzz13/base-api/internal/infraoas"
+	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/oas"
+	"github.com/abczzz13/base-api/internal/version"
 )
 
 type serverResult struct {
@@ -51,13 +54,23 @@ func Run(
 ) error {
 	_ = args
 	_ = stdin
+	_ = stdout
 
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	cfg, configWarnings := loadConfigWithWarnings(getenv)
+
+	logger.New(logger.Config{
+		Format:      cfg.LogFormat,
+		Level:       cfg.LogLevel,
+		Version:     version.GetVersion(),
+		Environment: cfg.Environment,
+		Writer:      stderr,
+	})
+
 	for _, warning := range configWarnings {
-		_, _ = fmt.Fprintf(stderr, "config warning: %s\n", warning)
+		slog.WarnContext(ctx, "config warning", "warning", warning)
 	}
 
 	baseService := newBaseService(cfg)
@@ -96,8 +109,8 @@ func Run(
 		}(s.name, s.server)
 	}
 
-	_, _ = fmt.Fprintf(stdout, "public listening on %s (environment=%s)\n", cfg.Address, cfg.Environment)
-	_, _ = fmt.Fprintf(stdout, "infra listening on %s (internal only)\n", cfg.InfraAddress)
+	slog.InfoContext(ctx, "server started", "server", "public", "address", cfg.Address)
+	slog.InfoContext(ctx, "server started", "server", "infra", "address", cfg.InfraAddress)
 
 	shutdownAll := func() error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -122,7 +135,7 @@ func Run(
 		}
 		return fmt.Errorf("%s server stopped unexpectedly", res.name)
 	case <-ctx.Done():
-		_, _ = fmt.Fprintln(stderr, "shutting down")
+		slog.InfoContext(ctx, "shutting down")
 
 		if err := shutdownAll(); err != nil {
 			return err

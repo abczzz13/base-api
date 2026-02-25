@@ -41,12 +41,50 @@ func TestRunReturnsErrorWhenListenFails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Run returned nil error for invalid listen address")
 	}
-	if !strings.Contains(err.Error(), "public server listen") {
+	if !strings.Contains(err.Error(), "create public listener") {
 		t.Fatalf("Run error does not identify public listener failure: %v", err)
 	}
 	if !strings.Contains(err.Error(), "invalid-address") {
 		t.Fatalf("Run error does not include invalid address context: %v", err)
 	}
+}
+
+func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
+	publicAddr := reserveTCPAddress(t)
+
+	occupiedInfraListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for occupied infra address: %v", err)
+	}
+	defer func() { _ = occupiedInfraListener.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err = Run(
+		ctx,
+		nil,
+		getenvFromMap(map[string]string{
+			"API_ADDR":        publicAddr,
+			"API_INFRA_ADDR":  occupiedInfraListener.Addr().String(),
+			"API_ENVIRONMENT": "test",
+		}),
+		strings.NewReader(""),
+		io.Discard,
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatalf("Run returned nil error when infra listen should fail")
+	}
+	if !strings.Contains(err.Error(), "create infra listener") {
+		t.Fatalf("Run error does not identify infra listener failure: %v", err)
+	}
+
+	releasedListener, err := net.Listen("tcp", publicAddr)
+	if err != nil {
+		t.Fatalf("public listener address was not released after startup failure: %v", err)
+	}
+	_ = releasedListener.Close()
 }
 
 func TestNewHTTPServerUsesConfiguredTimeouts(t *testing.T) {
@@ -252,6 +290,127 @@ func TestNewInfraHandlerWiresDocumentationRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
+	t.Run("allows preflight for configured origin", func(t *testing.T) {
+		handler, err := newPublicHandler(Config{
+			Environment: "test",
+			CORS: CORSConfig{
+				AllowedOrigins: []string{"https://client.example"},
+			},
+			CSRF: CSRFConfig{Enabled: true},
+		})
+		if err != nil {
+			t.Fatalf("newPublicHandler returned error: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodOptions, "/healthz", nil)
+		req.Header.Set("Origin", "https://client.example")
+		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+		req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("status mismatch: want %d, got %d", http.StatusNoContent, rr.Code)
+		}
+
+		for headerName, wantValue := range map[string]string{
+			"Access-Control-Allow-Origin":  "https://client.example",
+			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+		} {
+			if got := rr.Header().Get(headerName); got != wantValue {
+				t.Fatalf("header %q mismatch: want %q, got %q", headerName, wantValue, got)
+			}
+		}
+	})
+
+	t.Run("denies unsafe cross-origin request from untrusted origin", func(t *testing.T) {
+		handler, err := newPublicHandler(Config{
+			Environment: "test",
+			CORS: CORSConfig{
+				AllowedOrigins: []string{"https://trusted.example"},
+			},
+			CSRF: CSRFConfig{
+				Enabled:        true,
+				TrustedOrigins: []string{"https://trusted.example"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("newPublicHandler returned error: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
+		req.Header.Set("Origin", "https://evil.example")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("status mismatch: want %d, got %d", http.StatusForbidden, rr.Code)
+		}
+		if got := rr.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+			t.Fatalf("content-type mismatch: want %q, got %q", "application/json; charset=utf-8", got)
+		}
+		if got := rr.Body.String(); got != `{"code":"forbidden","message":"cross-origin request denied"}` {
+			t.Fatalf("body mismatch: got %q", got)
+		}
+	})
+
+	t.Run("trusted cross-origin requests pass CSRF layer", func(t *testing.T) {
+		baseCfg := Config{
+			Environment: "test",
+			CORS: CORSConfig{
+				AllowedOrigins: []string{"https://trusted.example"},
+			},
+		}
+
+		handlerWithoutCSRF, err := newPublicHandler(baseCfg)
+		if err != nil {
+			t.Fatalf("newPublicHandler without CSRF returned error: %v", err)
+		}
+
+		cfgWithCSRF := baseCfg
+		cfgWithCSRF.CSRF = CSRFConfig{
+			Enabled:        true,
+			TrustedOrigins: []string{"https://trusted.example"},
+		}
+		handlerWithCSRF, err := newPublicHandler(cfgWithCSRF)
+		if err != nil {
+			t.Fatalf("newPublicHandler with CSRF returned error: %v", err)
+		}
+
+		newCrossSiteRequest := func() *http.Request {
+			req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
+			req.Header.Set("Origin", "https://trusted.example")
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			return req
+		}
+
+		rrWithoutCSRF := httptest.NewRecorder()
+		handlerWithoutCSRF.ServeHTTP(rrWithoutCSRF, newCrossSiteRequest())
+
+		if rrWithoutCSRF.Code == http.StatusForbidden {
+			t.Fatalf("expected baseline request without CSRF to be non-forbidden")
+		}
+
+		rrWithCSRF := httptest.NewRecorder()
+		handlerWithCSRF.ServeHTTP(rrWithCSRF, newCrossSiteRequest())
+
+		if rrWithCSRF.Code == http.StatusForbidden {
+			t.Fatalf("expected trusted origin request to pass CSRF layer")
+		}
+		if rrWithCSRF.Code != rrWithoutCSRF.Code {
+			t.Fatalf("status mismatch with trusted CSRF origin: want %d, got %d", rrWithoutCSRF.Code, rrWithCSRF.Code)
+		}
+		if rrWithCSRF.Body.String() != rrWithoutCSRF.Body.String() {
+			t.Fatalf("body mismatch with trusted CSRF origin: want %q, got %q", rrWithoutCSRF.Body.String(), rrWithCSRF.Body.String())
+		}
+	})
 }
 
 type errWriter struct {

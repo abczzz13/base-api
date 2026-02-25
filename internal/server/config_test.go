@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 
@@ -21,12 +22,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -48,12 +55,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9191",
 				Environment:       "production",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     750 * time.Millisecond,
 				ReadHeaderTimeout: 3 * time.Second,
 				ReadTimeout:       11 * time.Second,
 				WriteTimeout:      25 * time.Second,
 				IdleTimeout:       45 * time.Second,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -66,12 +79,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "qa",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -84,12 +103,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "sandbox",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -102,12 +127,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -120,12 +151,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -141,12 +178,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -160,12 +203,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "json",
-				LogLevel:          "debug",
+				LogLevel:          slog.LevelDebug,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -178,12 +227,18 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
 			},
 		},
 		{
@@ -196,12 +251,55 @@ func TestLoadConfig(t *testing.T) {
 				InfraAddress:      "127.0.0.1:9090",
 				Environment:       "development",
 				LogFormat:         "text",
-				LogLevel:          "info",
+				LogLevel:          slog.LevelInfo,
 				ReadyzTimeout:     2 * time.Second,
 				ReadHeaderTimeout: defaultReadHeaderTimeout,
 				ReadTimeout:       defaultReadTimeout,
 				WriteTimeout:      defaultWriteTimeout,
 				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					MaxAge: 5 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					Enabled: true,
+				},
+			},
+		},
+		{
+			name: "parses and normalizes CORS and CSRF configuration",
+			env: map[string]string{
+				"API_CORS_ALLOWED_ORIGINS":   " https://Example.com , * ,https://example.com/ ",
+				"API_CORS_ALLOWED_METHODS":   " GET , POST ",
+				"API_CORS_ALLOWED_HEADERS":   " Content-Type , Authorization ",
+				"API_CORS_EXPOSED_HEADERS":   " X-Request-Id ",
+				"API_CORS_ALLOW_CREDENTIALS": "true",
+				"API_CORS_MAX_AGE":           "10m",
+				"API_CSRF_TRUSTED_ORIGINS":   " https://Trusted.com , https://trusted.com/ ",
+				"API_CSRF_ENABLED":           "false",
+			},
+			want: Config{
+				Address:           "0.0.0.0:8080",
+				InfraAddress:      "127.0.0.1:9090",
+				Environment:       "development",
+				LogFormat:         "text",
+				LogLevel:          slog.LevelInfo,
+				ReadyzTimeout:     2 * time.Second,
+				ReadHeaderTimeout: defaultReadHeaderTimeout,
+				ReadTimeout:       defaultReadTimeout,
+				WriteTimeout:      defaultWriteTimeout,
+				IdleTimeout:       defaultIdleTimeout,
+				CORS: CORSConfig{
+					AllowedOrigins:   []string{"https://example.com"},
+					AllowedMethods:   []string{"GET", "POST"},
+					AllowedHeaders:   []string{"Content-Type", "Authorization"},
+					ExposedHeaders:   []string{"X-Request-Id"},
+					AllowCredentials: true,
+					MaxAge:           10 * time.Minute,
+				},
+				CSRF: CSRFConfig{
+					TrustedOrigins: []string{"https://trusted.com"},
+					Enabled:        false,
+				},
 			},
 		},
 	}
@@ -259,6 +357,42 @@ func TestLoadConfigWithWarnings(t *testing.T) {
 			wantWarnings: []string{
 				"invalid log format \"xml\", using default \"text\"",
 				"invalid log level \"trace\", using default \"info\"",
+			},
+		},
+		{
+			name: "warnings for invalid CORS and CSRF values",
+			env: map[string]string{
+				"API_CORS_ALLOWED_ORIGINS":   "https://ok.example, not-an-origin",
+				"API_CORS_ALLOW_CREDENTIALS": "maybe",
+				"API_CORS_MAX_AGE":           "0s",
+				"API_CSRF_TRUSTED_ORIGINS":   "https://trusted.example/path,https://trusted.example",
+				"API_CSRF_ENABLED":           "invalid",
+			},
+			wantWarnings: []string{
+				"invalid origin \"not-an-origin\" for API_CORS_ALLOWED_ORIGINS, ignoring",
+				"invalid boolean for API_CORS_ALLOW_CREDENTIALS=\"maybe\", using default false",
+				"non-positive duration for API_CORS_MAX_AGE=\"0s\", using default 5m0s",
+				"invalid origin \"https://trusted.example/path\" for API_CSRF_TRUSTED_ORIGINS, ignoring",
+				"invalid boolean for API_CSRF_ENABLED=\"invalid\", using default true",
+			},
+		},
+		{
+			name: "warning for wildcard origins with credentials",
+			env: map[string]string{
+				"API_CORS_ALLOWED_ORIGINS":   "*",
+				"API_CORS_ALLOW_CREDENTIALS": "true",
+			},
+			wantWarnings: []string{
+				"invalid CORS configuration: API_CORS_ALLOW_CREDENTIALS=true cannot be combined with wildcard API_CORS_ALLOWED_ORIGINS=\"*\"; wildcard origins are ignored",
+			},
+		},
+		{
+			name: "warning when CORS origins are configured without CSRF trusted origins",
+			env: map[string]string{
+				"API_CORS_ALLOWED_ORIGINS": "https://client.example",
+			},
+			wantWarnings: []string{
+				"CSRF is enabled and CORS origins are configured, but API_CSRF_TRUSTED_ORIGINS is empty; unsafe cross-origin requests will be denied",
 			},
 		},
 	}

@@ -8,26 +8,17 @@ import (
 
 type Config struct {
 	Format      string
-	Level       string
+	Level       slog.Level
 	Version     string
 	Environment string
 	Writer      io.Writer
 }
 
 func New(cfg Config) {
-	var level slog.Level
-	switch cfg.Level {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
+	opts := &slog.HandlerOptions{
+		AddSource: true,
+		Level:     cfg.Level,
 	}
-
-	opts := &slog.HandlerOptions{Level: level}
 
 	writer := cfg.Writer
 	if writer == nil {

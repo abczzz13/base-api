@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	"github.com/abczzz13/base-api/internal/docsui"
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/oas"
 	"github.com/abczzz13/base-api/internal/version"
 )
@@ -73,15 +75,14 @@ func Run(
 		slog.WarnContext(ctx, "config warning", "warning", warning)
 	}
 
-	baseService := newBaseService(cfg)
-	publicAPI, err := oas.NewServer(baseService)
+	publicHandler, err := newPublicHandler(cfg)
 	if err != nil {
-		return fmt.Errorf("create public API server: %w", err)
+		return fmt.Errorf("create public API handler: %w", err)
 	}
 
 	infraHandler, err := newInfraHandler(cfg)
 	if err != nil {
-		return fmt.Errorf("create infra API server: %w", err)
+		return fmt.Errorf("create infra API handler: %w", err)
 	}
 
 	servers := []struct {
@@ -90,7 +91,7 @@ func Run(
 	}{
 		{
 			name:   "public",
-			server: newHTTPServer(cfg, cfg.Address, publicAPI),
+			server: newHTTPServer(cfg, cfg.Address, publicHandler),
 		},
 		{
 			name:   "infra",
@@ -98,25 +99,59 @@ func Run(
 		},
 	}
 
-	errCh := make(chan serverResult, len(servers))
+	listeningServers := make([]struct {
+		name     string
+		server   *http.Server
+		listener net.Listener
+	}, 0, len(servers))
+
+	closeBoundListeners := func() {
+		for _, s := range listeningServers {
+			_ = s.listener.Close()
+		}
+	}
+
 	for _, s := range servers {
-		go func(name string, srv *http.Server) {
-			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errCh <- serverResult{name: name, err: fmt.Errorf("%s server listen: %w", name, err)}
+		listener, err := net.Listen("tcp", s.server.Addr)
+		if err != nil {
+			closeBoundListeners()
+			return fmt.Errorf("create %s listener: %w", s.name, err)
+		}
+
+		listeningServers = append(listeningServers, struct {
+			name     string
+			server   *http.Server
+			listener net.Listener
+		}{
+			name:     s.name,
+			server:   s.server,
+			listener: listener,
+		})
+	}
+
+	for _, s := range listeningServers {
+		slog.With(
+			slog.String("server", s.name),
+			slog.String("address", s.listener.Addr().String()),
+		).InfoContext(ctx, "server listening")
+	}
+
+	errCh := make(chan serverResult, len(listeningServers))
+	for _, s := range listeningServers {
+		go func(name string, srv *http.Server, l net.Listener) {
+			if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- serverResult{name: name, err: fmt.Errorf("%s server serve: %w", name, err)}
 				return
 			}
 			errCh <- serverResult{name: name}
-		}(s.name, s.server)
+		}(s.name, s.server, s.listener)
 	}
-
-	slog.InfoContext(ctx, "server started", "server", "public", "address", cfg.Address)
-	slog.InfoContext(ctx, "server started", "server", "infra", "address", cfg.InfraAddress)
 
 	shutdownAll := func() error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
-		for _, s := range servers {
+		for _, s := range listeningServers {
 			if err := s.server.Shutdown(shutdownCtx); err != nil {
 				return fmt.Errorf("shutdown %s server: %w", s.name, err)
 			}
@@ -141,7 +176,7 @@ func Run(
 			return err
 		}
 
-		for range servers {
+		for range listeningServers {
 			res := <-errCh
 			if res.err != nil {
 				return res.err
@@ -154,13 +189,13 @@ func Run(
 
 func newInfraHandler(cfg Config) (http.Handler, error) {
 	infraService := newInfraService(cfg, defaultReadinessCheckers(cfg)...)
-	infraAPI, err := infraoas.NewServer(infraService)
+
+	infraAPI, err := infraoas.NewServer(infraService, infraoas.WithErrorHandler(ogenErrorHandler))
 	if err != nil {
 		return nil, err
 	}
 
 	mux := http.NewServeMux()
-	// Keep manual infra/docs routes in front of the generated OAS router.
 	mux.Handle("GET /metrics", promhttp.HandlerFor(
 		prometheus.DefaultGatherer,
 		promhttp.HandlerOpts{EnableOpenMetrics: true},
@@ -168,5 +203,40 @@ func newInfraHandler(cfg Config) (http.Handler, error) {
 	docsui.Register(mux)
 	mux.Handle("/", infraAPI)
 
-	return mux, nil
+	chain := middleware.NewChain(
+		middleware.RequestLogger(),
+		middleware.Recovery(),
+	)
+
+	return chain.WrapHandler(mux), nil
+}
+
+func newPublicHandler(cfg Config) (http.Handler, error) {
+	baseService := newBaseService(cfg)
+
+	baseAPI, err := oas.NewServer(baseService, oas.WithErrorHandler(ogenErrorHandler))
+	if err != nil {
+		return nil, err
+	}
+
+	chain := middleware.NewChain(
+		middleware.RequestLogger(),
+		middleware.Recovery(),
+		middleware.CORS(middleware.CORSConfig{
+			AllowedOrigins:   cfg.CORS.AllowedOrigins,
+			AllowedMethods:   cfg.CORS.AllowedMethods,
+			AllowedHeaders:   cfg.CORS.AllowedHeaders,
+			ExposedHeaders:   cfg.CORS.ExposedHeaders,
+			AllowCredentials: cfg.CORS.AllowCredentials,
+			MaxAge:           cfg.CORS.MaxAge,
+		}),
+	)
+
+	if cfg.CSRF.Enabled {
+		chain.With(middleware.CSRF(middleware.CSRFConfig{
+			TrustedOrigins: cfg.CSRF.TrustedOrigins,
+		}))
+	}
+
+	return chain.WrapHandler(baseAPI), nil
 }

@@ -15,6 +15,10 @@ just pre-pr       # Full pre-PR quality gate (check + security)
 
 **Important:** Always run `just check` after making code changes to verify formatting, linting, and tests pass.
 
+## Documentation
+
+Every package should contain a `doc.go` file with package-level documentation explaining the package's purpose and contents.
+
 ## Testing
 
 All changed or new features must be accompanied by tests. Preferred approach:

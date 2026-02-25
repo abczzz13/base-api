@@ -15,48 +15,51 @@ func TestNew(t *testing.T) {
 		wantFormat       string
 		wantContainAttrs []string
 		wantNotContain   string
+		logFunc          func(msg string, args ...any)
 	}{
 		{
 			name:       "defaults to info level and text format",
 			cfg:        Config{},
 			wantFormat: "text",
+			logFunc:    slog.Info,
 		},
 		{
 			name:       "debug level",
-			cfg:        Config{Level: "debug"},
+			cfg:        Config{Level: slog.LevelDebug},
 			wantFormat: "text",
+			logFunc:    slog.Debug,
 		},
 		{
 			name:       "warn level",
-			cfg:        Config{Level: "warn"},
+			cfg:        Config{Level: slog.LevelWarn},
 			wantFormat: "text",
+			logFunc:    slog.Warn,
 		},
 		{
 			name:       "error level",
-			cfg:        Config{Level: "error"},
+			cfg:        Config{Level: slog.LevelError},
 			wantFormat: "text",
-		},
-		{
-			name:       "invalid level defaults to info",
-			cfg:        Config{Level: "invalid"},
-			wantFormat: "text",
+			logFunc:    slog.Error,
 		},
 		{
 			name:       "json format",
 			cfg:        Config{Format: "json"},
 			wantFormat: "json",
+			logFunc:    slog.Info,
 		},
 		{
 			name:             "includes version and environment attrs",
 			cfg:              Config{Format: "json", Version: "1.2.3", Environment: "production"},
 			wantFormat:       "json",
 			wantContainAttrs: []string{`"version":"1.2.3"`, `"environment":"production"`},
+			logFunc:          slog.Info,
 		},
 		{
 			name:           "text format does not contain json markers",
 			cfg:            Config{Format: "text"},
 			wantFormat:     "text",
 			wantNotContain: `"version"`,
+			logFunc:        slog.Info,
 		},
 	}
 
@@ -67,16 +70,7 @@ func TestNew(t *testing.T) {
 
 			New(tt.cfg)
 
-			switch tt.cfg.Level {
-			case "debug":
-				slog.Debug("test message")
-			case "warn":
-				slog.Warn("test message")
-			case "error":
-				slog.Error("test message")
-			default:
-				slog.Info("test message")
-			}
+			tt.logFunc("test message")
 
 			output := buf.String()
 			if output == "" {

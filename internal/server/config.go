@@ -3,10 +3,14 @@ package server
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
 type CORSConfig struct {
@@ -23,11 +27,18 @@ type CSRFConfig struct {
 	Enabled        bool
 }
 
+type OTELConfig struct {
+	TracingEnabled   bool
+	ServiceName      string
+	TracesSampler    telemetry.TraceSampler
+	TracesSamplerArg *float64
+}
+
 type Config struct {
 	Address           string
 	InfraAddress      string
 	Environment       string
-	LogFormat         string
+	LogFormat         logger.Format
 	LogLevel          slog.Level
 	ReadyzTimeout     time.Duration
 	ReadHeaderTimeout time.Duration
@@ -36,6 +47,7 @@ type Config struct {
 	IdleTimeout       time.Duration
 	CORS              CORSConfig
 	CSRF              CSRFConfig
+	OTEL              OTELConfig
 }
 
 func loadConfig(getenv func(string) string) Config {
@@ -45,13 +57,14 @@ func loadConfig(getenv func(string) string) Config {
 
 func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 	logLevelStr := strings.ToLower(strings.TrimSpace(getenv("LOG_LEVEL")))
+	normalizedLogFormat := strings.ToLower(strings.TrimSpace(getenv("LOG_FORMAT")))
 	logLevel, _ := parseLogLevel(logLevelStr)
 
 	cfg := Config{
 		Address:           getenv("API_ADDR"),
 		InfraAddress:      getenv("API_INFRA_ADDR"),
 		Environment:       getenv("API_ENVIRONMENT"),
-		LogFormat:         strings.ToLower(strings.TrimSpace(getenv("LOG_FORMAT"))),
+		LogFormat:         logger.DefaultFormat,
 		LogLevel:          logLevel,
 		ReadyzTimeout:     2 * time.Second,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
@@ -80,10 +93,6 @@ func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 		cfg.Environment = "development"
 	}
 
-	if cfg.LogFormat == "" {
-		cfg.LogFormat = "text"
-	}
-
 	if logLevelStr == "" {
 		cfg.LogLevel = slog.LevelInfo
 	}
@@ -91,9 +100,12 @@ func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 	var warnings []string
 	var warning string
 
-	if cfg.LogFormat != "text" && cfg.LogFormat != "json" {
-		warnings = append(warnings, fmt.Sprintf("invalid log format %q, using default \"text\"", cfg.LogFormat))
-		cfg.LogFormat = "text"
+	if normalizedLogFormat != "" {
+		if parsedLogFormat, valid := logger.ParseFormat(normalizedLogFormat); valid {
+			cfg.LogFormat = parsedLogFormat
+		} else {
+			warnings = append(warnings, fmt.Sprintf("invalid log format %q, using default %q", normalizedLogFormat, logger.DefaultFormat))
+		}
 	}
 
 	if _, valid := parseLogLevel(logLevelStr); logLevelStr != "" && !valid {
@@ -123,6 +135,10 @@ func loadConfigWithWarnings(getenv func(string) string) (Config, []string) {
 	var csrfWarnings []string
 	cfg.CSRF, csrfWarnings = loadCSRFConfig(getenv)
 	warnings = append(warnings, csrfWarnings...)
+
+	var otelWarnings []string
+	cfg.OTEL, otelWarnings = loadOTELConfig(getenv)
+	warnings = append(warnings, otelWarnings...)
 
 	if cfg.CSRF.Enabled && len(cfg.CORS.AllowedOrigins) > 0 && len(cfg.CSRF.TrustedOrigins) == 0 {
 		warnings = append(warnings, "CSRF is enabled and CORS origins are configured, but API_CSRF_TRUSTED_ORIGINS is empty; unsafe cross-origin requests will be denied")
@@ -243,6 +259,59 @@ func loadCSRFConfig(getenv func(string) string) (CSRFConfig, []string) {
 	cfg.Enabled = enabled
 
 	return cfg, warnings
+}
+
+func loadOTELConfig(getenv func(string) string) (OTELConfig, []string) {
+	cfg := OTELConfig{
+		ServiceName:   strings.TrimSpace(getenv("OTEL_SERVICE_NAME")),
+		TracesSampler: telemetry.DefaultTraceSampler,
+	}
+	var warnings []string
+
+	sdkDisabled, warning := loadBoolEnv(getenv, "OTEL_SDK_DISABLED", false)
+	warnings = appendWarning(warnings, warning)
+
+	if sampler := strings.ToLower(strings.TrimSpace(getenv("OTEL_TRACES_SAMPLER"))); sampler != "" {
+		if parsedSampler, valid := telemetry.ParseTraceSampler(sampler); valid {
+			cfg.TracesSampler = parsedSampler
+		} else {
+			warnings = append(warnings, fmt.Sprintf("invalid value for OTEL_TRACES_SAMPLER=%q, using default %q", sampler, telemetry.DefaultTraceSampler))
+		}
+	}
+
+	if samplerArg := strings.TrimSpace(getenv("OTEL_TRACES_SAMPLER_ARG")); samplerArg != "" {
+		if !cfg.TracesSampler.UsesArgument() {
+			warnings = append(warnings, "OTEL_TRACES_SAMPLER_ARG is set but OTEL_TRACES_SAMPLER is not a ratio sampler, ignoring")
+		} else {
+			cfg.TracesSamplerArg, warning = loadOTELTracesSamplerArg(getenv)
+			warnings = appendWarning(warnings, warning)
+		}
+	}
+
+	endpointConfigured := strings.TrimSpace(getenv("OTEL_EXPORTER_OTLP_ENDPOINT")) != "" ||
+		strings.TrimSpace(getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) != ""
+
+	cfg.TracingEnabled = endpointConfigured && !sdkDisabled
+
+	return cfg, warnings
+}
+
+func loadOTELTracesSamplerArg(getenv func(string) string) (*float64, string) {
+	value := strings.TrimSpace(getenv("OTEL_TRACES_SAMPLER_ARG"))
+	if value == "" {
+		return nil, ""
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return nil, fmt.Sprintf("invalid float for OTEL_TRACES_SAMPLER_ARG=%q, ignoring", value)
+	}
+
+	if parsed < 0 || parsed > 1 {
+		return nil, fmt.Sprintf("out-of-range float for OTEL_TRACES_SAMPLER_ARG=%q, expected value between 0 and 1 inclusive, ignoring", value)
+	}
+
+	return &parsed, ""
 }
 
 func loadBoolEnv(getenv func(string) string, key string, fallback bool) (bool, string) {

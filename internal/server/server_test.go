@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +15,15 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/middleware"
 )
 
 func TestRunIgnoresStartupWriteErrors(t *testing.T) {
@@ -85,6 +97,32 @@ func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
 		t.Fatalf("public listener address was not released after startup failure: %v", err)
 	}
 	_ = releasedListener.Close()
+}
+
+func TestRunContinuesWhenTracingInitializationFails(t *testing.T) {
+	publicAddr := reserveTCPAddress(t)
+	infraAddr := reserveTCPAddress(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var stderr bytes.Buffer
+	env := map[string]string{
+		"API_ADDR":                           publicAddr,
+		"API_INFRA_ADDR":                     infraAddr,
+		"API_ENVIRONMENT":                    "test",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://127.0.0.1:4318/v1/traces",
+		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+	}
+
+	err := Run(ctx, nil, getenvFromMap(env), strings.NewReader(""), io.Discard, &stderr)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if !strings.Contains(stderr.String(), "OpenTelemetry tracing disabled") {
+		t.Fatalf("expected tracing initialization warning in logs, got: %q", stderr.String())
+	}
 }
 
 func TestNewHTTPServerUsesConfiguredTimeouts(t *testing.T) {
@@ -411,6 +449,180 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 			t.Fatalf("body mismatch with trusted CSRF origin: want %q, got %q", rrWithoutCSRF.Body.String(), rrWithCSRF.Body.String())
 		}
 	})
+}
+
+func TestNewPublicHandlerTracingIncludesTraceContextInLogs(t *testing.T) {
+	previousLogger := slog.Default()
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+	})
+
+	var logs bytes.Buffer
+	logger.New(logger.Config{
+		Format:      logger.FormatJSON,
+		Level:       slog.LevelDebug,
+		Environment: "test",
+		Writer:      &logs,
+	})
+
+	provider := sdktrace.NewTracerProvider()
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+	})
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	handler, err := newPublicHandler(Config{
+		Environment: "test",
+		OTEL: OTELConfig{
+			TracingEnabled: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newPublicHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+	if got := rr.Header().Get(middleware.TraceIDResponseHeader); got == "" {
+		t.Fatalf("expected non-empty %s response header", middleware.TraceIDResponseHeader)
+	}
+
+	entries := decodeJSONLogLines(t, logs.String())
+	var completed map[string]any
+	for _, entry := range entries {
+		if msg, _ := entry["msg"].(string); msg == "request completed" {
+			completed = entry
+			break
+		}
+	}
+	if completed == nil {
+		t.Fatalf("expected request completed log entry, got %#v", entries)
+	}
+
+	traceID, ok := completed["trace_id"].(string)
+	if !ok || traceID == "" {
+		t.Fatalf("expected non-empty trace_id in request log, got %#v", completed["trace_id"])
+	}
+	spanID, ok := completed["span_id"].(string)
+	if !ok || spanID == "" {
+		t.Fatalf("expected non-empty span_id in request log, got %#v", completed["span_id"])
+	}
+}
+
+func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+	})
+
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+	})
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	handler, err := newPublicHandler(Config{
+		Environment: "test",
+		OTEL: OTELConfig{
+			TracingEnabled: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newPublicHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	spans := recorder.Ended()
+	if len(spans) == 0 {
+		t.Fatal("expected at least one ended span")
+	}
+
+	matches := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	for _, span := range spans {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "api.operation.id" && attr.Value.Type() == attribute.STRING && attr.Value.AsString() == "getHealthz" {
+				matches = append(matches, span)
+				break
+			}
+		}
+	}
+
+	if len(matches) != 1 {
+		names := make([]string, 0, len(spans))
+		for _, span := range spans {
+			names = append(names, span.Name())
+		}
+		t.Fatalf("expected exactly one span with api.operation.id=getHealthz, got %d spans (names=%v)", len(matches), names)
+	}
+
+	targetSpan := matches[0]
+	if got := targetSpan.Name(); got != "GET getHealthz" {
+		t.Fatalf("span name mismatch: want %q, got %q", "GET getHealthz", got)
+	}
+
+	attrs := map[string]string{}
+	for _, attr := range targetSpan.Attributes() {
+		if attr.Value.Type() != attribute.STRING {
+			continue
+		}
+		attrs[string(attr.Key)] = attr.Value.AsString()
+	}
+
+	for key, want := range map[string]string{
+		"api.operation.id":      "getHealthz",
+		"api.operation.name":    "GetHealthz",
+		"api.operation.summary": "Public health endpoint",
+	} {
+		if got := attrs[key]; got != want {
+			t.Fatalf("span attribute %q mismatch: want %q, got %q", key, want, got)
+		}
+	}
+}
+
+func decodeJSONLogLines(t *testing.T, data string) []map[string]any {
+	t.Helper()
+
+	if strings.TrimSpace(data) == "" {
+		return nil
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(data))
+	entries := make([]map[string]any, 0)
+	for {
+		entry := map[string]any{}
+		if err := decoder.Decode(&entry); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			t.Fatalf("decode JSON log entry: %v", err)
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return entries
 }
 
 type errWriter struct {

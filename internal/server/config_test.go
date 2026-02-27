@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -306,8 +308,13 @@ func TestLoadConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			want := tt.want
+			if want.OTEL.TracesSampler == "" {
+				want.OTEL.TracesSampler = telemetry.DefaultTraceSampler
+			}
+
 			got := loadConfig(getenvFromMap(tt.env))
-			if diff := cmp.Diff(tt.want, got); diff != "" {
+			if diff := cmp.Diff(want, got); diff != "" {
 				t.Fatalf("loadConfig mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -407,8 +414,154 @@ func TestLoadConfigWithWarnings(t *testing.T) {
 	}
 }
 
+func TestLoadConfigOTEL(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want OTELConfig
+	}{
+		{
+			name: "tracing disabled by default",
+			env:  map[string]string{},
+			want: OTELConfig{},
+		},
+		{
+			name: "tracing enabled when otlp endpoint is configured",
+			env: map[string]string{
+				"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+			},
+			want: OTELConfig{TracingEnabled: true},
+		},
+		{
+			name: "tracing enabled when otlp traces endpoint is configured",
+			env: map[string]string{
+				"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://localhost:4318/v1/traces",
+			},
+			want: OTELConfig{TracingEnabled: true},
+		},
+		{
+			name: "otel sdk disabled overrides endpoint auto enable",
+			env: map[string]string{
+				"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+				"OTEL_SDK_DISABLED":           "true",
+			},
+			want: OTELConfig{TracingEnabled: false},
+		},
+		{
+			name: "service name is trimmed",
+			env: map[string]string{
+				"OTEL_SERVICE_NAME": "  base-api-custom  ",
+			},
+			want: OTELConfig{ServiceName: "base-api-custom"},
+		},
+		{
+			name: "sampler configuration is parsed",
+			env: map[string]string{
+				"OTEL_TRACES_SAMPLER":     "traceidratio",
+				"OTEL_TRACES_SAMPLER_ARG": "0.25",
+			},
+			want: OTELConfig{
+				TracesSampler:    telemetry.TraceSamplerTraceIDRatio,
+				TracesSamplerArg: float64Ptr(0.25),
+			},
+		},
+		{
+			name: "sampler arg is ignored for non ratio sampler",
+			env: map[string]string{
+				"OTEL_TRACES_SAMPLER":     "always_on",
+				"OTEL_TRACES_SAMPLER_ARG": "0.25",
+			},
+			want: OTELConfig{TracesSampler: telemetry.TraceSamplerAlwaysOn},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := tt.want
+			if want.TracesSampler == "" {
+				want.TracesSampler = telemetry.DefaultTraceSampler
+			}
+
+			got := loadConfig(getenvFromMap(tt.env))
+			if diff := cmp.Diff(want, got.OTEL); diff != "" {
+				t.Fatalf("loadConfig OTEL mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLoadConfigWithWarningsOTEL(t *testing.T) {
+	tests := []struct {
+		name         string
+		env          map[string]string
+		wantWarnings []string
+	}{
+		{
+			name: "invalid sdk disabled value emits warning",
+			env: map[string]string{
+				"OTEL_SDK_DISABLED": "definitely-not-a-bool",
+			},
+			wantWarnings: []string{
+				"invalid boolean for OTEL_SDK_DISABLED=\"definitely-not-a-bool\", using default false",
+			},
+		},
+		{
+			name: "invalid sampler value emits warning",
+			env: map[string]string{
+				"OTEL_TRACES_SAMPLER": "unknown",
+			},
+			wantWarnings: []string{
+				"invalid value for OTEL_TRACES_SAMPLER=\"unknown\", using default \"parentbased_always_on\"",
+			},
+		},
+		{
+			name: "sampler arg is ignored for non ratio sampler",
+			env: map[string]string{
+				"OTEL_TRACES_SAMPLER":     "always_on",
+				"OTEL_TRACES_SAMPLER_ARG": "0.5",
+			},
+			wantWarnings: []string{
+				"OTEL_TRACES_SAMPLER_ARG is set but OTEL_TRACES_SAMPLER is not a ratio sampler, ignoring",
+			},
+		},
+		{
+			name: "invalid sampler arg emits warning when sampler uses arg",
+			env: map[string]string{
+				"OTEL_TRACES_SAMPLER":     "traceidratio",
+				"OTEL_TRACES_SAMPLER_ARG": "not-a-float",
+			},
+			wantWarnings: []string{
+				"invalid float for OTEL_TRACES_SAMPLER_ARG=\"not-a-float\", ignoring",
+			},
+		},
+		{
+			name: "out of range sampler arg emits warning when sampler uses arg",
+			env: map[string]string{
+				"OTEL_TRACES_SAMPLER":     "traceidratio",
+				"OTEL_TRACES_SAMPLER_ARG": "1.5",
+			},
+			wantWarnings: []string{
+				"out-of-range float for OTEL_TRACES_SAMPLER_ARG=\"1.5\", expected value between 0 and 1 inclusive, ignoring",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, gotWarnings := loadConfigWithWarnings(getenvFromMap(tt.env))
+			if diff := cmp.Diff(tt.wantWarnings, gotWarnings); diff != "" {
+				t.Fatalf("loadConfigWithWarnings OTEL mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func getenvFromMap(env map[string]string) func(string) string {
 	return func(key string) string {
 		return env[key]
 	}
+}
+
+func float64Ptr(value float64) *float64 {
+	return &value
 }

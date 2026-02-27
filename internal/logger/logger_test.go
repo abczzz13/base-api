@@ -12,7 +12,7 @@ func TestNew(t *testing.T) {
 	tests := []struct {
 		name             string
 		cfg              Config
-		wantFormat       string
+		wantFormat       Format
 		wantContainAttrs []string
 		wantNotContain   string
 		logFunc          func(msg string, args ...any)
@@ -20,44 +20,44 @@ func TestNew(t *testing.T) {
 		{
 			name:       "defaults to info level and text format",
 			cfg:        Config{},
-			wantFormat: "text",
+			wantFormat: FormatText,
 			logFunc:    slog.Info,
 		},
 		{
 			name:       "debug level",
 			cfg:        Config{Level: slog.LevelDebug},
-			wantFormat: "text",
+			wantFormat: FormatText,
 			logFunc:    slog.Debug,
 		},
 		{
 			name:       "warn level",
 			cfg:        Config{Level: slog.LevelWarn},
-			wantFormat: "text",
+			wantFormat: FormatText,
 			logFunc:    slog.Warn,
 		},
 		{
 			name:       "error level",
 			cfg:        Config{Level: slog.LevelError},
-			wantFormat: "text",
+			wantFormat: FormatText,
 			logFunc:    slog.Error,
 		},
 		{
 			name:       "json format",
-			cfg:        Config{Format: "json"},
-			wantFormat: "json",
+			cfg:        Config{Format: FormatJSON},
+			wantFormat: FormatJSON,
 			logFunc:    slog.Info,
 		},
 		{
 			name:             "includes version and environment attrs",
-			cfg:              Config{Format: "json", Version: "1.2.3", Environment: "production"},
-			wantFormat:       "json",
+			cfg:              Config{Format: FormatJSON, Version: "1.2.3", Environment: "production"},
+			wantFormat:       FormatJSON,
 			wantContainAttrs: []string{`"version":"1.2.3"`, `"environment":"production"`},
 			logFunc:          slog.Info,
 		},
 		{
 			name:           "text format does not contain json markers",
-			cfg:            Config{Format: "text"},
-			wantFormat:     "text",
+			cfg:            Config{Format: FormatText},
+			wantFormat:     FormatText,
 			wantNotContain: `"version"`,
 			logFunc:        slog.Info,
 		},
@@ -77,7 +77,7 @@ func TestNew(t *testing.T) {
 				t.Fatal("expected output, got empty string")
 			}
 
-			if tt.wantFormat == "json" {
+			if tt.wantFormat == FormatJSON {
 				var result map[string]any
 				if err := json.Unmarshal([]byte(output), &result); err != nil {
 					t.Fatalf("expected valid JSON output, got: %q, error: %v", output, err)
@@ -109,7 +109,7 @@ func TestNewSetsDefaultLogger(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{
 		Writer: &buf,
-		Format: "json",
+		Format: FormatJSON,
 	}
 	New(cfg)
 

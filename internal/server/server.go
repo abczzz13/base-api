@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,12 +22,19 @@ import (
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/oas"
+	"github.com/abczzz13/base-api/internal/telemetry"
 	"github.com/abczzz13/base-api/internal/version"
 )
 
 type serverResult struct {
 	name string
 	err  error
+}
+
+type managedServer struct {
+	name     string
+	server   *http.Server
+	listener net.Listener
 }
 
 const (
@@ -72,8 +80,38 @@ func Run(
 	})
 
 	for _, warning := range configWarnings {
-		slog.WarnContext(ctx, "config warning", "warning", warning)
+		slog.WarnContext(ctx, "config warning", slog.String("warning", warning))
 	}
+
+	telemetryShutdown := func(context.Context) error { return nil }
+	if cfg.OTEL.TracingEnabled {
+		var telemetryErr error
+		telemetryShutdown, telemetryErr = telemetry.InitTracing(ctx, telemetry.Config{
+			ServiceName:      cfg.OTEL.ServiceName,
+			ServiceVersion:   version.GetVersion(),
+			Environment:      cfg.Environment,
+			TracesSampler:    cfg.OTEL.TracesSampler,
+			TracesSamplerArg: cfg.OTEL.TracesSamplerArg,
+		})
+		if telemetryErr != nil {
+			slog.WarnContext(ctx, "OpenTelemetry tracing disabled", "error", telemetryErr)
+			cfg.OTEL.TracingEnabled = false
+			telemetryShutdown = func(context.Context) error { return nil }
+		}
+	}
+
+	var shutdownTracingOnce sync.Once
+	shutdownTracing := func() {
+		shutdownTracingOnce.Do(func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+
+			if err := telemetryShutdown(shutdownCtx); err != nil {
+				slog.WarnContext(ctx, "shutdown tracing", "error", err)
+			}
+		})
+	}
+	defer shutdownTracing()
 
 	publicHandler, err := newPublicHandler(cfg)
 	if err != nil {
@@ -85,10 +123,7 @@ func Run(
 		return fmt.Errorf("create infra API handler: %w", err)
 	}
 
-	servers := []struct {
-		name   string
-		server *http.Server
-	}{
+	servers := []managedServer{
 		{
 			name:   "public",
 			server: newHTTPServer(cfg, cfg.Address, publicHandler),
@@ -99,45 +134,31 @@ func Run(
 		},
 	}
 
-	listeningServers := make([]struct {
-		name     string
-		server   *http.Server
-		listener net.Listener
-	}, 0, len(servers))
-
 	closeBoundListeners := func() {
-		for _, s := range listeningServers {
-			_ = s.listener.Close()
+		for i := range servers {
+			if servers[i].listener != nil {
+				_ = servers[i].listener.Close()
+			}
 		}
 	}
 
-	for _, s := range servers {
-		listener, err := net.Listen("tcp", s.server.Addr)
+	for i := range servers {
+		listener, err := net.Listen("tcp", servers[i].server.Addr)
 		if err != nil {
 			closeBoundListeners()
-			return fmt.Errorf("create %s listener: %w", s.name, err)
+			return fmt.Errorf("create %s listener: %w", servers[i].name, err)
 		}
 
-		listeningServers = append(listeningServers, struct {
-			name     string
-			server   *http.Server
-			listener net.Listener
-		}{
-			name:     s.name,
-			server:   s.server,
-			listener: listener,
-		})
-	}
+		servers[i].listener = listener
 
-	for _, s := range listeningServers {
 		slog.With(
-			slog.String("server", s.name),
-			slog.String("address", s.listener.Addr().String()),
+			slog.String("server", servers[i].name),
+			slog.String("address", listener.Addr().String()),
 		).InfoContext(ctx, "server listening")
 	}
 
-	errCh := make(chan serverResult, len(listeningServers))
-	for _, s := range listeningServers {
+	errCh := make(chan serverResult, len(servers))
+	for _, s := range servers {
 		go func(name string, srv *http.Server, l net.Listener) {
 			if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- serverResult{name: name, err: fmt.Errorf("%s server serve: %w", name, err)}
@@ -148,10 +169,12 @@ func Run(
 	}
 
 	shutdownAll := func() error {
+		defer shutdownTracing()
+
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
-		for _, s := range listeningServers {
+		for _, s := range servers {
 			if err := s.server.Shutdown(shutdownCtx); err != nil {
 				return fmt.Errorf("shutdown %s server: %w", s.name, err)
 			}
@@ -176,7 +199,7 @@ func Run(
 			return err
 		}
 
-		for range listeningServers {
+		for range servers {
 			res := <-errCh
 			if res.err != nil {
 				return res.err
@@ -203,23 +226,36 @@ func newInfraHandler(cfg Config) (http.Handler, error) {
 	docsui.Register(mux)
 	mux.Handle("/", infraAPI)
 
-	chain := middleware.NewChain(
+	middlewares := []func(http.Handler) http.Handler{
 		middleware.RequestLogger(),
 		middleware.Recovery(),
-	)
+	}
 
-	return chain.WrapHandler(mux), nil
+	return middleware.NewChain(middlewares...).WrapHandler(mux), nil
 }
 
 func newPublicHandler(cfg Config) (http.Handler, error) {
 	baseService := newBaseService(cfg)
 
-	baseAPI, err := oas.NewServer(baseService, oas.WithErrorHandler(ogenErrorHandler))
+	serverOptions := []oas.ServerOption{oas.WithErrorHandler(ogenErrorHandler)}
+	if cfg.OTEL.TracingEnabled {
+		serverOptions = append(serverOptions, oas.WithMiddleware(middleware.OTELOperationAttributes()))
+	}
+
+	baseAPI, err := oas.NewServer(baseService, serverOptions...)
 	if err != nil {
 		return nil, err
 	}
 
-	chain := middleware.NewChain(
+	middlewares := make([]func(http.Handler) http.Handler, 0, 5)
+	if cfg.OTEL.TracingEnabled {
+		middlewares = append(middlewares,
+			middleware.Tracing("public"),
+			middleware.TraceResponseHeader(),
+		)
+	}
+
+	middlewares = append(middlewares,
 		middleware.RequestLogger(),
 		middleware.Recovery(),
 		middleware.CORS(middleware.CORSConfig{
@@ -231,6 +267,7 @@ func newPublicHandler(cfg Config) (http.Handler, error) {
 			MaxAge:           cfg.CORS.MaxAge,
 		}),
 	)
+	chain := middleware.NewChain(middlewares...)
 
 	if cfg.CSRF.Enabled {
 		chain.With(middleware.CSRF(middleware.CSRFConfig{

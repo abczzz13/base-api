@@ -7,18 +7,20 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/abczzz13/base-api/internal/config"
+
 	"github.com/abczzz13/base-api/internal/oas"
 )
 
 func TestBaseServiceGetHealthz(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  Config
+		cfg  config.Config
 		want *oas.HealthResponse
 	}{
 		{
 			name: "returns public safe health response",
-			cfg:  Config{Environment: "production"},
+			cfg:  config.Config{Environment: "production"},
 			want: &oas.HealthResponse{Status: "OK"},
 		},
 	}
@@ -59,7 +61,7 @@ func TestBaseServiceNewError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newBaseService(Config{})
+			svc := newBaseService(config.Config{})
 			got := svc.NewError(context.Background(), tt.err)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Fatalf("NewError mismatch (-want +got):\n%s", diff)

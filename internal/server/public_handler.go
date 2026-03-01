@@ -4,11 +4,12 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/oas"
 )
 
-func newPublicHandler(cfg Config, deps runtimeDependencies) (http.Handler, error) {
+func newPublicHandler(cfg config.Config, deps runtimeDependencies) (http.Handler, error) {
 	if deps.requestMetrics == nil {
 		return nil, errors.New("request metrics dependency is required")
 	}

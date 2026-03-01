@@ -4,16 +4,17 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/oas"
 )
 
 var _ oas.Handler = (*baseService)(nil)
 
 type baseService struct {
-	cfg Config
+	cfg config.Config
 }
 
-func newBaseService(cfg Config) *baseService {
+func newBaseService(cfg config.Config) *baseService {
 	return &baseService{cfg: cfg}
 }
 

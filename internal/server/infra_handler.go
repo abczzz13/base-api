@@ -6,12 +6,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/docsui"
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/middleware"
 )
 
-func newInfraHandler(cfg Config, deps runtimeDependencies) (http.Handler, error) {
+func newInfraHandler(cfg config.Config, deps runtimeDependencies) (http.Handler, error) {
 	if deps.requestMetrics == nil {
 		return nil, errors.New("request metrics dependency is required")
 	}

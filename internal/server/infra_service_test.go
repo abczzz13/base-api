@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/abczzz13/base-api/internal/config"
+
 	"github.com/abczzz13/base-api/internal/infraoas"
 )
 
@@ -24,7 +26,7 @@ func TestInfraServiceGetLivez(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newInfraService(Config{})
+			svc := newInfraService(config.Config{})
 			got, err := svc.GetLivez(context.Background())
 			if err != nil {
 				t.Fatalf("GetLivez returned error: %v", err)
@@ -39,20 +41,20 @@ func TestInfraServiceGetLivez(t *testing.T) {
 func TestInfraServiceGetReadyz(t *testing.T) {
 	tests := []struct {
 		name     string
-		cfg      Config
+		cfg      config.Config
 		checkers []ReadinessChecker
 		wantResp *infraoas.ProbeResponse
 		wantErr  *infraoas.DefaultErrorStatusCode
 	}{
 		{
 			name:     "succeeds without readiness checkers",
-			cfg:      Config{ReadyzTimeout: time.Second},
+			cfg:      config.Config{ReadyzTimeout: time.Second},
 			checkers: nil,
 			wantResp: &infraoas.ProbeResponse{Status: "OK"},
 		},
 		{
 			name: "succeeds when checker passes",
-			cfg:  Config{ReadyzTimeout: time.Second},
+			cfg:  config.Config{ReadyzTimeout: time.Second},
 			checkers: []ReadinessChecker{
 				ReadinessCheckerFunc(func(context.Context) error { return nil }),
 			},
@@ -60,7 +62,7 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 		},
 		{
 			name: "returns not ready when checker fails",
-			cfg:  Config{ReadyzTimeout: time.Second},
+			cfg:  config.Config{ReadyzTimeout: time.Second},
 			checkers: []ReadinessChecker{
 				ReadinessCheckerFunc(func(context.Context) error { return errors.New("dependency down") }),
 			},
@@ -130,7 +132,7 @@ func TestInfraServiceGetReadyzTimeoutContext(t *testing.T) {
 				return nil
 			})
 
-			svc := newInfraService(Config{ReadyzTimeout: tt.readyzTimeout}, checker)
+			svc := newInfraService(config.Config{ReadyzTimeout: tt.readyzTimeout}, checker)
 			_, err := svc.GetReadyz(context.Background())
 			if err != nil {
 				t.Fatalf("GetReadyz returned error: %v", err)
@@ -146,7 +148,7 @@ func TestInfraServiceGetReadyzTimeoutContext(t *testing.T) {
 func TestInfraServiceGetHealthz(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  Config
+		cfg  config.Config
 		want struct {
 			Status      string
 			Environment string
@@ -154,7 +156,7 @@ func TestInfraServiceGetHealthz(t *testing.T) {
 	}{
 		{
 			name: "returns expected static health fields",
-			cfg:  Config{Environment: "local"},
+			cfg:  config.Config{Environment: "local"},
 			want: struct {
 				Status      string
 				Environment string

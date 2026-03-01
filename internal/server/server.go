@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/version"
 )
@@ -16,7 +17,7 @@ import (
 func Run(
 	ctx context.Context,
 	args []string,
-	getenv func(string) string,
+	lookupEnv func(string) (string, bool),
 	stdin io.Reader,
 	stdout, stderr io.Writer,
 ) error {
@@ -27,7 +28,10 @@ func Run(
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	cfg, configWarnings := loadConfigWithWarnings(getenv)
+	cfg, err := config.Load(lookupEnv)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 
 	logger.New(logger.Config{
 		Format:      cfg.LogFormat,
@@ -50,8 +54,6 @@ func Run(
 		slog.String("build_time", buildMetadata.BuildTime),
 		slog.String("go_version", buildMetadata.GoVersion),
 	)
-
-	logConfigWarnings(ctx, configWarnings)
 
 	shutdownTracing := setupTracing(ctx, &cfg)
 	defer shutdownTracing()
@@ -117,11 +119,5 @@ func Run(
 		}
 
 		return nil
-	}
-}
-
-func logConfigWarnings(ctx context.Context, warnings []string) {
-	for _, warning := range warnings {
-		slog.WarnContext(ctx, "config warning", slog.String("warning", warning))
 	}
 }

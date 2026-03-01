@@ -23,6 +23,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
 )
@@ -35,14 +36,14 @@ func TestRunIgnoresShutdownWriteErrors(t *testing.T) {
 	assertRunHandlesWriterErrors(t, io.Discard, errWriter{err: errors.New("stderr unavailable")})
 }
 
-func TestRunReturnsErrorWhenListenFails(t *testing.T) {
+func TestRunReturnsErrorWhenConfigValidationFails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	err := Run(
 		ctx,
 		nil,
-		getenvFromMap(map[string]string{
+		lookupEnvFromMap(map[string]string{
 			"API_ADDR":        "invalid-address",
 			"API_INFRA_ADDR":  reserveTCPAddress(t),
 			"API_ENVIRONMENT": "test",
@@ -52,10 +53,10 @@ func TestRunReturnsErrorWhenListenFails(t *testing.T) {
 		io.Discard,
 	)
 	if err == nil {
-		t.Fatalf("Run returned nil error for invalid listen address")
+		t.Fatalf("Run returned nil error for invalid configured address")
 	}
-	if !strings.Contains(err.Error(), "create public listener") {
-		t.Fatalf("Run error does not identify public listener failure: %v", err)
+	if !strings.Contains(err.Error(), "load config") {
+		t.Fatalf("Run error does not identify config loading failure: %v", err)
 	}
 	if !strings.Contains(err.Error(), "invalid-address") {
 		t.Fatalf("Run error does not include invalid address context: %v", err)
@@ -77,7 +78,7 @@ func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
 	err = Run(
 		ctx,
 		nil,
-		getenvFromMap(map[string]string{
+		lookupEnvFromMap(map[string]string{
 			"API_ADDR":        publicAddr,
 			"API_INFRA_ADDR":  occupiedInfraListener.Addr().String(),
 			"API_ENVIRONMENT": "test",
@@ -116,7 +117,7 @@ func TestRunContinuesWhenTracingInitializationFails(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
 	}
 
-	err := Run(ctx, nil, getenvFromMap(env), strings.NewReader(""), io.Discard, &stderr)
+	err := Run(ctx, nil, lookupEnvFromMap(env), strings.NewReader(""), io.Discard, &stderr)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestRunContinuesWhenTracingInitializationFails(t *testing.T) {
 }
 
 func TestNewHTTPServerUsesConfiguredTimeouts(t *testing.T) {
-	cfg := Config{
+	cfg := config.Config{
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       11 * time.Second,
 		WriteTimeout:      25 * time.Second,
@@ -159,7 +160,7 @@ func TestNewHTTPServerUsesConfiguredTimeouts(t *testing.T) {
 }
 
 func TestNewInfraHandlerRoutesMetricsThroughPromHTTP(t *testing.T) {
-	handler, err := newInfraHandlerForTest(t, Config{Environment: "test"})
+	handler, err := newInfraHandlerForTest(t, config.Config{Environment: "test"})
 	if err != nil {
 		t.Fatalf("newInfraHandler returned error: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestNewInfraHandlerRoutesMetricsThroughPromHTTP(t *testing.T) {
 }
 
 func TestNewInfraHandlerWiresDocumentationRoutes(t *testing.T) {
-	handler, err := newInfraHandlerForTest(t, Config{Environment: "test"})
+	handler, err := newInfraHandlerForTest(t, config.Config{Environment: "test"})
 	if err != nil {
 		t.Fatalf("newInfraHandler returned error: %v", err)
 	}
@@ -335,7 +336,7 @@ func TestNewInfraHandlerRecoversPanicsFromMetricsGatherer(t *testing.T) {
 	runtimeDeps := newRuntimeDependenciesForTest(t)
 	runtimeDeps.metricsGatherer = panicGatherer{}
 
-	handler, err := newInfraHandler(Config{Environment: "test"}, runtimeDeps)
+	handler, err := newInfraHandler(config.Config{Environment: "test"}, runtimeDeps)
 	if err != nil {
 		t.Fatalf("newInfraHandler returned error: %v", err)
 	}
@@ -357,12 +358,12 @@ func TestNewInfraHandlerRecoversPanicsFromMetricsGatherer(t *testing.T) {
 
 func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 	t.Run("allows preflight for configured origin", func(t *testing.T) {
-		handler, err := newPublicHandlerForTest(t, Config{
+		handler, err := newPublicHandlerForTest(t, config.Config{
 			Environment: "test",
-			CORS: CORSConfig{
+			CORS: config.CORSConfig{
 				AllowedOrigins: []string{"https://client.example"},
 			},
-			CSRF: CSRFConfig{Enabled: true},
+			CSRF: config.CSRFConfig{Enabled: true},
 		})
 		if err != nil {
 			t.Fatalf("newPublicHandler returned error: %v", err)
@@ -392,12 +393,12 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 	})
 
 	t.Run("denies unsafe cross-origin request from untrusted origin", func(t *testing.T) {
-		handler, err := newPublicHandlerForTest(t, Config{
+		handler, err := newPublicHandlerForTest(t, config.Config{
 			Environment: "test",
-			CORS: CORSConfig{
+			CORS: config.CORSConfig{
 				AllowedOrigins: []string{"https://trusted.example"},
 			},
-			CSRF: CSRFConfig{
+			CSRF: config.CSRFConfig{
 				Enabled:        true,
 				TrustedOrigins: []string{"https://trusted.example"},
 			},
@@ -425,9 +426,9 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 	})
 
 	t.Run("trusted cross-origin requests pass CSRF layer", func(t *testing.T) {
-		baseCfg := Config{
+		baseCfg := config.Config{
 			Environment: "test",
-			CORS: CORSConfig{
+			CORS: config.CORSConfig{
 				AllowedOrigins: []string{"https://trusted.example"},
 			},
 		}
@@ -438,7 +439,7 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 		}
 
 		cfgWithCSRF := baseCfg
-		cfgWithCSRF.CSRF = CSRFConfig{
+		cfgWithCSRF.CSRF = config.CSRFConfig{
 			Enabled:        true,
 			TrustedOrigins: []string{"https://trusted.example"},
 		}
@@ -501,9 +502,9 @@ func TestNewPublicHandlerTracingIncludesTraceContextInLogs(t *testing.T) {
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	handler, err := newPublicHandlerForTest(t, Config{
+	handler, err := newPublicHandlerForTest(t, config.Config{
 		Environment: "test",
-		OTEL: OTELConfig{
+		OTEL: config.OTELConfig{
 			TracingEnabled: true,
 		},
 	})
@@ -560,9 +561,9 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	handler, err := newPublicHandlerForTest(t, Config{
+	handler, err := newPublicHandlerForTest(t, config.Config{
 		Environment: "test",
-		OTEL: OTELConfig{
+		OTEL: config.OTELConfig{
 			TracingEnabled: true,
 		},
 	})
@@ -636,13 +637,13 @@ func newRuntimeDependenciesForTest(t *testing.T) runtimeDependencies {
 	return deps
 }
 
-func newPublicHandlerForTest(t *testing.T, cfg Config) (http.Handler, error) {
+func newPublicHandlerForTest(t *testing.T, cfg config.Config) (http.Handler, error) {
 	t.Helper()
 
 	return newPublicHandler(cfg, newRuntimeDependenciesForTest(t))
 }
 
-func newInfraHandlerForTest(t *testing.T, cfg Config) (http.Handler, error) {
+func newInfraHandlerForTest(t *testing.T, cfg config.Config) (http.Handler, error) {
 	t.Helper()
 
 	return newInfraHandler(cfg, newRuntimeDependenciesForTest(t))
@@ -707,7 +708,7 @@ func assertRunHandlesWriterErrors(t *testing.T, stdout, stderr io.Writer) {
 		runDone := make(chan struct{})
 		var runErr error
 		go func() {
-			runErr = Run(ctx, nil, getenvFromMap(env), strings.NewReader(""), stdout, stderr)
+			runErr = Run(ctx, nil, lookupEnvFromMap(env), strings.NewReader(""), stdout, stderr)
 			close(runDone)
 		}()
 
@@ -809,4 +810,11 @@ func waitForRunDone(runDone <-chan struct{}, timeout time.Duration) bool {
 
 func isAddressInUseError(err error) bool {
 	return errors.Is(err, syscall.EADDRINUSE)
+}
+
+func lookupEnvFromMap(env map[string]string) func(string) (string, bool) {
+	return func(key string) (string, bool) {
+		value, ok := env[key]
+		return value, ok
+	}
 }

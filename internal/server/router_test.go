@@ -8,17 +8,19 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/abczzz13/base-api/internal/config"
+
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/oas"
 )
 
 func TestGeneratedRoutersBehavior(t *testing.T) {
-	publicHandler, err := oas.NewServer(newBaseService(Config{Environment: "test"}))
+	publicHandler, err := oas.NewServer(newBaseService(config.Config{Environment: "test"}))
 	if err != nil {
 		t.Fatalf("create public server: %v", err)
 	}
 
-	infraHandler, err := infraoas.NewServer(newInfraService(Config{Environment: "test"}))
+	infraHandler, err := infraoas.NewServer(newInfraService(config.Config{Environment: "test"}))
 	if err != nil {
 		t.Fatalf("create infra server: %v", err)
 	}

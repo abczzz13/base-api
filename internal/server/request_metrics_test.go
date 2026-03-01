@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/abczzz13/base-api/internal/config"
 )
 
 func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
@@ -15,12 +17,12 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 		t.Fatalf("newRuntimeDependencies returned error: %v", err)
 	}
 
-	publicHandler, err := newPublicHandler(Config{Environment: "test"}, runtimeDeps)
+	publicHandler, err := newPublicHandler(config.Config{Environment: "test"}, runtimeDeps)
 	if err != nil {
 		t.Fatalf("newPublicHandler returned error: %v", err)
 	}
 
-	infraHandler, err := newInfraHandler(Config{Environment: "test"}, runtimeDeps)
+	infraHandler, err := newInfraHandler(config.Config{Environment: "test"}, runtimeDeps)
 	if err != nil {
 		t.Fatalf("newInfraHandler returned error: %v", err)
 	}

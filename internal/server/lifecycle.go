@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/abczzz13/base-api/internal/config"
 )
 
 const defaultServerShutdownTimeout = 10 * time.Second
@@ -23,7 +25,7 @@ type managedServer struct {
 	listener net.Listener
 }
 
-func newHTTPServer(cfg Config, addr string, handler http.Handler) *http.Server {
+func newHTTPServer(cfg config.Config, addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,

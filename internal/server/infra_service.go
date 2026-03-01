@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/version"
 )
@@ -12,11 +13,11 @@ import (
 var _ infraoas.Handler = (*infraService)(nil)
 
 type infraService struct {
-	cfg               Config
+	cfg               config.Config
 	readinessCheckers []ReadinessChecker
 }
 
-func newInfraService(cfg Config, readinessCheckers ...ReadinessChecker) *infraService {
+func newInfraService(cfg config.Config, readinessCheckers ...ReadinessChecker) *infraService {
 	return &infraService{
 		cfg:               cfg,
 		readinessCheckers: readinessCheckers,

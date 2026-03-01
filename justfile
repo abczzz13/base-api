@@ -20,6 +20,13 @@ gitleaks := ".bin/gitleaks"
 docker_compose := "docker compose --env-file .env"
 go_api_package := "./cmd/api"
 yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows"
+version := `git describe --tags --always --dirty 2>/dev/null || echo 'dev'`
+git_branch := `git branch --show-current 2>/dev/null || echo 'unknown'`
+git_commit := `git rev-parse HEAD 2>/dev/null || echo 'unknown'`
+git_tag := `git describe --exact-match --tags 2>/dev/null || echo 'unknown'`
+git_tree_state := `git rev-parse --is-inside-work-tree >/dev/null 2>&1 && { [ -n "$(git status --porcelain 2>/dev/null)" ] && echo 'dirty' || echo 'clean'; } || echo 'unknown'`
+build_time := `date -u '+%Y-%m-%dT%H:%M:%SZ'`
+version_package := "github.com/abczzz13/base-api/internal/version"
 
 default:
     @just --list
@@ -55,21 +62,42 @@ build-go:
     go build ./...
 
 [script]
-build-api:
-    mkdir -p build
-    go build -o build/api {{go_api_package}}
+_version-ldflags:
+    ldflags=(
+        "-s"
+        "-w"
+        "-X" {{quote(version_package + ".buildVersion=" + version)}}
+        "-X" {{quote(version_package + ".gitCommit=" + git_commit)}}
+        "-X" {{quote(version_package + ".gitBranch=" + git_branch)}}
+        "-X" {{quote(version_package + ".gitTag=" + git_tag)}}
+        "-X" {{quote(version_package + ".gitTreeState=" + git_tree_state)}}
+        "-X" {{quote(version_package + ".buildTime=" + build_time)}}
+    )
 
+    printf '%s' "${ldflags[*]}"
+
+[script]
+build-api: env-init
+    mkdir -p build
+    ldflags="$(just --quiet _version-ldflags)"
+    go build -ldflags "$ldflags" -o build/api {{go_api_package}}
+
+[script]
 build-image: env-init
+    VERSION={{quote(version)}} \
+    GIT_COMMIT={{quote(git_commit)}} \
+    GIT_BRANCH={{quote(git_branch)}} \
+    GIT_TAG={{quote(git_tag)}} \
+    GIT_TREE_STATE={{quote(git_tree_state)}} \
+    BUILD_TIME={{quote(build_time)}} \
     {{docker_compose}} build api
 
 build: build-go build-api build-image
 
 [script]
 run-go: env-init
-    set -a
-    source .env
-    set +a
-    go run {{go_api_package}}
+    ldflags="$(just --quiet _version-ldflags)"
+    go run -ldflags "$ldflags" {{go_api_package}}
 
 run: run-go
 
@@ -170,7 +198,7 @@ lint-go: check-tools
     {{golangci_lint}} run ./...
 
 lint-yaml: check-tools
-    {{yamlfmt}} -lint {{yaml_paths}}
+	{{yamlfmt}} -lint {{yaml_paths}}
 
 lint: lint-go lint-yaml
 

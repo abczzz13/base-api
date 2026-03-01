@@ -11,6 +11,9 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+ARG GIT_TAG=unknown
+ARG GIT_TREE_STATE=unknown
 ARG BUILD_TIME=unknown
 
 WORKDIR /src
@@ -33,7 +36,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -trimpath \
     -mod=readonly \
     -buildvcs=false \
-    -ldflags="-s -w -X github.com/abczzz13/base-api/internal/version.buildVersion=${VERSION}" \
+    -ldflags="-s -w \
+    -X github.com/abczzz13/base-api/internal/version.buildVersion=${VERSION} \
+    -X github.com/abczzz13/base-api/internal/version.gitCommit=${GIT_COMMIT} \
+    -X github.com/abczzz13/base-api/internal/version.gitBranch=${GIT_BRANCH} \
+    -X github.com/abczzz13/base-api/internal/version.gitTag=${GIT_TAG} \
+    -X github.com/abczzz13/base-api/internal/version.gitTreeState=${GIT_TREE_STATE} \
+    -X github.com/abczzz13/base-api/internal/version.buildTime=${BUILD_TIME}" \
     -o /out/base-api \
     ./cmd/api
 
@@ -48,7 +57,9 @@ LABEL org.opencontainers.image.source="https://github.com/abczzz13/base-api" \
     org.opencontainers.image.description="Base API service" \
     org.opencontainers.image.version="${VERSION}" \
     org.opencontainers.image.revision="${GIT_COMMIT}" \
-    org.opencontainers.image.created="${BUILD_TIME}"
+    org.opencontainers.image.created="${BUILD_TIME}" \
+    org.opencontainers.image.licenses=MIT \
+    org.opencontainers.image.authors="abczzz13"
 
 COPY --from=builder /out/base-api /base-api
 

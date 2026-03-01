@@ -8,6 +8,9 @@ services:
       args:
         VERSION: ${VERSION:-dev}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        GIT_BRANCH: ${GIT_BRANCH:-unknown}
+        GIT_TAG: ${GIT_TAG:-unknown}
+        GIT_TREE_STATE: ${GIT_TREE_STATE:-unknown}
         BUILD_TIME: ${BUILD_TIME:-unknown}
     ports:
       - "${API_PORT:-8080}:8080"

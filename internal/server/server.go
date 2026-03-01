@@ -79,6 +79,20 @@ func Run(
 		Writer:      stderr,
 	})
 
+	buildMetadata := version.GetBuildMetadata()
+	slog.InfoContext(
+		ctx,
+		"build metadata",
+		slog.String("version", buildMetadata.Version),
+		slog.String("git_commit", buildMetadata.GitCommit),
+		slog.String("git_commit_short", buildMetadata.GitCommitShort),
+		slog.String("git_tag", buildMetadata.GitTag),
+		slog.String("git_branch", buildMetadata.GitBranch),
+		slog.String("git_tree_state", buildMetadata.GitTreeState),
+		slog.String("build_time", buildMetadata.BuildTime),
+		slog.String("go_version", buildMetadata.GoVersion),
+	)
+
 	for _, warning := range configWarnings {
 		slog.WarnContext(ctx, "config warning", slog.String("warning", warning))
 	}

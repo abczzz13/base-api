@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestCSRF(t *testing.T) {
@@ -106,5 +108,42 @@ func TestCSRF(t *testing.T) {
 				t.Errorf("expected handler called=%v, got %v", tt.handlerCalled, handlerCalled)
 			}
 		})
+	}
+}
+
+func TestCSRFDenialIncrementsRejectedRequestMetric(t *testing.T) {
+	requestMetrics, _ := newTestHTTPRequestMetrics(t)
+
+	server := "csrf_rejection_metric"
+	method := http.MethodPost
+	route := "createSession"
+	reason := RequestRejectionReasonCSRF
+	before := testutil.ToFloat64(requestMetrics.httpRejectedRequestsTotal.WithLabelValues(server, method, route, reason))
+
+	handler := RequestMetrics(requestMetrics, RequestMetricsConfig{
+		Server: server,
+		RouteLabel: func(*http.Request) string {
+			return route
+		},
+	})(CSRF(CSRFConfig{
+		TrustedOrigins: []string{"https://trusted.com"},
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	req := httptest.NewRequest(method, "/sessions", nil)
+	req.Header.Set("Origin", "https://evil.com")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+
+	after := testutil.ToFloat64(requestMetrics.httpRejectedRequestsTotal.WithLabelValues(server, method, route, reason))
+	if got := after - before; got != 1 {
+		t.Fatalf("rejected request counter delta mismatch: want 1, got %v", got)
 	}
 }

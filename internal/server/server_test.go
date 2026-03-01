@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -158,7 +159,7 @@ func TestNewHTTPServerUsesConfiguredTimeouts(t *testing.T) {
 }
 
 func TestNewInfraHandlerRoutesMetricsThroughPromHTTP(t *testing.T) {
-	handler, err := newInfraHandler(Config{Environment: "test"})
+	handler, err := newInfraHandlerForTest(t, Config{Environment: "test"})
 	if err != nil {
 		t.Fatalf("newInfraHandler returned error: %v", err)
 	}
@@ -258,7 +259,7 @@ func TestNewInfraHandlerRoutesMetricsThroughPromHTTP(t *testing.T) {
 }
 
 func TestNewInfraHandlerWiresDocumentationRoutes(t *testing.T) {
-	handler, err := newInfraHandler(Config{Environment: "test"})
+	handler, err := newInfraHandlerForTest(t, Config{Environment: "test"})
 	if err != nil {
 		t.Fatalf("newInfraHandler returned error: %v", err)
 	}
@@ -330,9 +331,33 @@ func TestNewInfraHandlerWiresDocumentationRoutes(t *testing.T) {
 	}
 }
 
+func TestNewInfraHandlerRecoversPanicsFromMetricsGatherer(t *testing.T) {
+	runtimeDeps := newRuntimeDependenciesForTest(t)
+	runtimeDeps.metricsGatherer = panicGatherer{}
+
+	handler, err := newInfraHandler(Config{Environment: "test"}, runtimeDeps)
+	if err != nil {
+		t.Fatalf("newInfraHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("content-type mismatch: want %q, got %q", "application/json; charset=utf-8", got)
+	}
+	if got := rr.Body.String(); got != `{"code":"internal_error","message":"internal server error"}` {
+		t.Fatalf("body mismatch: got %q", got)
+	}
+}
+
 func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 	t.Run("allows preflight for configured origin", func(t *testing.T) {
-		handler, err := newPublicHandler(Config{
+		handler, err := newPublicHandlerForTest(t, Config{
 			Environment: "test",
 			CORS: CORSConfig{
 				AllowedOrigins: []string{"https://client.example"},
@@ -367,7 +392,7 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 	})
 
 	t.Run("denies unsafe cross-origin request from untrusted origin", func(t *testing.T) {
-		handler, err := newPublicHandler(Config{
+		handler, err := newPublicHandlerForTest(t, Config{
 			Environment: "test",
 			CORS: CORSConfig{
 				AllowedOrigins: []string{"https://trusted.example"},
@@ -407,7 +432,7 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 			},
 		}
 
-		handlerWithoutCSRF, err := newPublicHandler(baseCfg)
+		handlerWithoutCSRF, err := newPublicHandlerForTest(t, baseCfg)
 		if err != nil {
 			t.Fatalf("newPublicHandler without CSRF returned error: %v", err)
 		}
@@ -417,7 +442,7 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 			Enabled:        true,
 			TrustedOrigins: []string{"https://trusted.example"},
 		}
-		handlerWithCSRF, err := newPublicHandler(cfgWithCSRF)
+		handlerWithCSRF, err := newPublicHandlerForTest(t, cfgWithCSRF)
 		if err != nil {
 			t.Fatalf("newPublicHandler with CSRF returned error: %v", err)
 		}
@@ -476,7 +501,7 @@ func TestNewPublicHandlerTracingIncludesTraceContextInLogs(t *testing.T) {
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	handler, err := newPublicHandler(Config{
+	handler, err := newPublicHandlerForTest(t, Config{
 		Environment: "test",
 		OTEL: OTELConfig{
 			TracingEnabled: true,
@@ -535,7 +560,7 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	handler, err := newPublicHandler(Config{
+	handler, err := newPublicHandlerForTest(t, Config{
 		Environment: "test",
 		OTEL: OTELConfig{
 			TracingEnabled: true,
@@ -600,6 +625,29 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 	}
 }
 
+func newRuntimeDependenciesForTest(t *testing.T) runtimeDependencies {
+	t.Helper()
+
+	deps, err := newRuntimeDependencies()
+	if err != nil {
+		t.Fatalf("newRuntimeDependencies returned error: %v", err)
+	}
+
+	return deps
+}
+
+func newPublicHandlerForTest(t *testing.T, cfg Config) (http.Handler, error) {
+	t.Helper()
+
+	return newPublicHandler(cfg, newRuntimeDependenciesForTest(t))
+}
+
+func newInfraHandlerForTest(t *testing.T, cfg Config) (http.Handler, error) {
+	t.Helper()
+
+	return newInfraHandler(cfg, newRuntimeDependenciesForTest(t))
+}
+
 func decodeJSONLogLines(t *testing.T, data string) []map[string]any {
 	t.Helper()
 
@@ -627,6 +675,12 @@ func decodeJSONLogLines(t *testing.T, data string) []map[string]any {
 
 type errWriter struct {
 	err error
+}
+
+type panicGatherer struct{}
+
+func (panicGatherer) Gather() ([]*dto.MetricFamily, error) {
+	panic("metrics gather panic")
 }
 
 func (w errWriter) Write(p []byte) (int, error) {

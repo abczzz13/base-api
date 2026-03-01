@@ -14,6 +14,8 @@ func Recovery() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rvr := recover(); rvr != nil {
+					observeRecoveredPanic(r)
+
 					stack := make([]byte, 4096)
 					n := runtime.Stack(stack, false)
 					stack = stack[:n]

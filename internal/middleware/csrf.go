@@ -22,6 +22,8 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 		}
 
 		cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			observeRejectedRequest(r, RequestRejectionReasonCSRF)
+
 			ctx := r.Context()
 			origin := r.Header.Get("Origin")
 			secFetchSite := r.Header.Get("Sec-Fetch-Site")

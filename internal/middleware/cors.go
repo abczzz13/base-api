@@ -46,12 +46,16 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 			}
 
 			if len(cfg.AllowedOrigins) == 0 {
+				observeCORSPolicyDenial(r)
+
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			allowed := isOriginAllowed(origin, cfg.AllowedOrigins, cfg.AllowCredentials)
 			if !allowed {
+				observeCORSPolicyDenial(r)
+
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestCORS(t *testing.T) {
@@ -213,5 +215,40 @@ func TestAddVaryDeduplicatesValues(t *testing.T) {
 	vary := header.Values("Vary")
 	if len(vary) != 3 {
 		t.Fatalf("expected 3 vary values, got %d (%v)", len(vary), vary)
+	}
+}
+
+func TestCORSPolicyDenialIncrementsMetric(t *testing.T) {
+	requestMetrics, _ := newTestHTTPRequestMetrics(t)
+
+	server := "cors_policy_denial_metric"
+	method := http.MethodGet
+	route := "getHealthz"
+	before := testutil.ToFloat64(requestMetrics.httpCORSPolicyDenialsTotal.WithLabelValues(server, method, route))
+
+	handler := RequestMetrics(requestMetrics, RequestMetricsConfig{
+		Server: server,
+		RouteLabel: func(*http.Request) string {
+			return route
+		},
+	})(CORS(CORSConfig{
+		AllowedOrigins: []string{"https://allowed.example"},
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})))
+
+	req := httptest.NewRequest(method, "/healthz", nil)
+	req.Header.Set("Origin", "https://denied.example")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+
+	after := testutil.ToFloat64(requestMetrics.httpCORSPolicyDenialsTotal.WithLabelValues(server, method, route))
+	if got := after - before; got != 1 {
+		t.Fatalf("CORS policy denial counter delta mismatch: want 1, got %v", got)
 	}
 }

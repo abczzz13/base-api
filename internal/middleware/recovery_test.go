@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestRecovery(t *testing.T) {
@@ -63,5 +65,31 @@ func TestRecovery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRecoveryIncrementsRecoveredPanicMetricWithFallbackRequestLabels(t *testing.T) {
+	requestMetrics, _ := newTestHTTPRequestMetrics(t)
+
+	server := requestMetricsServerUnknown
+	method := http.MethodGet
+	route := RequestMetricsRouteUnmatched
+	before := testutil.ToFloat64(requestMetrics.httpRecoveredPanicsTotal.WithLabelValues(server, method, route))
+
+	handler := RequestMetrics(requestMetrics, RequestMetricsConfig{})(Recovery()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+
+	after := testutil.ToFloat64(requestMetrics.httpRecoveredPanicsTotal.WithLabelValues(server, method, route))
+	if got := after - before; got != 1 {
+		t.Fatalf("recovered panic counter delta mismatch: want 1, got %v", got)
 	}
 }

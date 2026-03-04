@@ -23,18 +23,13 @@ ENV CGO_ENABLED=0 \
 
 RUN apk add --no-cache ca-certificates
 
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-
 COPY . .
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/root/.cache/go-build \
     GOOS=${TARGETOS} \
     GOARCH=${TARGETARCH} \
     go build \
     -trimpath \
-    -mod=readonly \
+    -mod=vendor \
     -buildvcs=false \
     -ldflags="-s -w \
     -X github.com/abczzz13/base-api/internal/version.buildVersion=${VERSION} \

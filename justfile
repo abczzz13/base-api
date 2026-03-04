@@ -27,6 +27,7 @@ sqlc_config := "sqlc.yaml"
 db_url_default := "postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=disable"
 docker_compose := "docker compose --env-file .env"
 go_api_package := "./cmd/api"
+go_mod_mode := "-mod=vendor"
 yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows"
 version := `git describe --tags --always --dirty 2>/dev/null || echo 'dev'`
 git_branch := `git branch --show-current 2>/dev/null || echo 'unknown'`
@@ -70,7 +71,7 @@ db-start: env-init
     {{docker_compose}} up -d postgres
 
 build-go:
-    go build ./...
+    go build {{go_mod_mode}} ./...
 
 [script]
 _version-ldflags:
@@ -91,7 +92,7 @@ _version-ldflags:
 build-api: env-init
     mkdir -p build
     ldflags="$(just --quiet _version-ldflags)"
-    go build -ldflags "$ldflags" -o build/api {{go_api_package}}
+    go build {{go_mod_mode}} -ldflags "$ldflags" -o build/api {{go_api_package}}
 
 [script]
 build-image: env-init
@@ -108,7 +109,7 @@ build: build-go build-api build-image
 [script]
 run-go: env-init
     ldflags="$(just --quiet _version-ldflags)"
-    go run -ldflags "$ldflags" {{go_api_package}}
+    go run {{go_mod_mode}} -ldflags "$ldflags" {{go_api_package}}
 
 run: run-go
 
@@ -191,6 +192,12 @@ fmt-go: check-tools
             continue
         fi
 
+        case "$file" in
+            vendor/*)
+                continue
+                ;;
+        esac
+
         first_line=""
         IFS= read -r first_line < "$file" || true
         case "$first_line" in
@@ -216,6 +223,12 @@ fmt-go-check: check-tools
         if [ ! -f "$file" ]; then
             continue
         fi
+
+        case "$file" in
+            vendor/*)
+                continue
+                ;;
+        esac
 
         first_line=""
         IFS= read -r first_line < "$file" || true
@@ -273,7 +286,7 @@ check-security-tools:
     fi
 
 security-vuln: check-security-tools
-    {{govulncheck}} ./...
+    GOFLAGS="${GOFLAGS:+$GOFLAGS }{{go_mod_mode}}" {{govulncheck}} ./...
 
 [script]
 security-secrets: check-security-tools
@@ -296,10 +309,10 @@ test pattern="" *args:
     fi
 
     test_db_url="${TEST_DB_URL:-${DB_URL:-{{db_url_default}}}}"
-    TEST_DB_URL="$test_db_url" go test -v -p 1 -count=1 ./... {{ if pattern == "" { "-shuffle=on" } else { if pattern == "--" { "-shuffle=on" } else { "-run \"" + pattern + "\"" } } }} {{args}}
+    TEST_DB_URL="$test_db_url" go test {{go_mod_mode}} -v -p 1 -count=1 ./... {{ if pattern == "" { "-shuffle=on" } else { if pattern == "--" { "-shuffle=on" } else { "-run \"" + pattern + "\"" } } }} {{args}}
 
 race:
-    go test -race ./...
+    go test {{go_mod_mode}} -race ./...
 
 [script]
 coverage:
@@ -311,19 +324,32 @@ coverage:
                 ;;
         esac
         packages+=("$pkg")
-    done < <(go list ./...)
+    done < <(go list {{go_mod_mode}} ./...)
 
-    go test -coverprofile=coverage.out "${packages[@]}"
+    go test {{go_mod_mode}} -coverprofile=coverage.out "${packages[@]}"
     go tool cover -func=coverage.out
 
 coverage-all:
-    go test -coverprofile=coverage-all.out ./...
+    go test {{go_mod_mode}} -coverprofile=coverage-all.out ./...
     go tool cover -func=coverage-all.out
 
 vet:
-    go vet ./...
+    go vet {{go_mod_mode}} ./...
 
-tidy-check:
-    before="$(git status --porcelain -- go.mod go.sum)"; go mod tidy; after="$(git status --porcelain -- go.mod go.sum)"; test "$before" = "$after"
+[script]
+vendor-check:
+    before="$(git status --porcelain -- go.mod go.sum vendor)"
+    go mod tidy
+    go mod vendor
+    after="$(git status --porcelain -- go.mod go.sum vendor)"
 
-check: fmt-go-check lint test sqlc-check
+    if [ "$before" != "$after" ]; then
+        printf 'Go dependencies or vendor tree are out of date. Run: go mod tidy && go mod vendor\n'
+        printf 'Status before:\n%s\n' "${before:-<clean>}"
+        printf 'Status after:\n%s\n' "${after:-<clean>}"
+        exit 1
+    fi
+
+tidy-check: vendor-check
+
+check: fmt-go-check lint test sqlc-check vendor-check

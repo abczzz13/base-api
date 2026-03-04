@@ -33,6 +33,19 @@ const (
 	keyOTELTracesSamplerArg           = "OTEL_TRACES_SAMPLER_ARG"
 	keyOTELExporterOTLPEndpoint       = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	keyOTELExporterOTLPTracesEndpoint = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+
+	keyDBURL                   = "DB_URL"
+	keyDBMinConns              = "DB_MIN_CONNS"
+	keyDBMaxConns              = "DB_MAX_CONNS"
+	keyDBMaxConnLifetime       = "DB_MAX_CONN_LIFETIME"
+	keyDBMaxConnIdleTime       = "DB_MAX_CONN_IDLE_TIME"
+	keyDBHealthCheckPeriod     = "DB_HEALTH_CHECK_PERIOD"
+	keyDBConnectTimeout        = "DB_CONNECT_TIMEOUT"
+	keyDBMigrateOnStartup      = "DB_MIGRATE_ON_STARTUP"
+	keyDBMigrateTimeout        = "DB_MIGRATE_TIMEOUT"
+	keyDBStartupMaxAttempts    = "DB_STARTUP_MAX_ATTEMPTS"
+	keyDBStartupBackoffInitial = "DB_STARTUP_BACKOFF_INITIAL"
+	keyDBStartupBackoffMax     = "DB_STARTUP_BACKOFF_MAX"
 )
 
 func fileEnvKey(key string) string {

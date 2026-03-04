@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/abczzz13/base-api/internal/config"
@@ -23,6 +25,35 @@ type managedServer struct {
 	name     string
 	server   *http.Server
 	listener net.Listener
+}
+
+type cleanupStack struct {
+	funcs []func()
+	once  sync.Once
+}
+
+func newCleanupStack() *cleanupStack {
+	return &cleanupStack{}
+}
+
+func (c *cleanupStack) Add(cleanupFn func()) {
+	if c == nil || cleanupFn == nil {
+		return
+	}
+
+	c.funcs = append(c.funcs, cleanupFn)
+}
+
+func (c *cleanupStack) Run() {
+	if c == nil {
+		return
+	}
+
+	c.once.Do(func() {
+		for _, cleanupFunc := range slices.Backward(c.funcs) {
+			cleanupFunc()
+		}
+	})
 }
 
 func newHTTPServer(cfg config.Config, addr string, handler http.Handler) *http.Server {
@@ -46,10 +77,10 @@ func bindServerListeners(ctx context.Context, servers []managedServer) error {
 
 		servers[i].listener = listener
 
-		slog.With(
+		slog.InfoContext(ctx, "server listening",
 			slog.String("server", servers[i].name),
 			slog.String("address", listener.Addr().String()),
-		).InfoContext(ctx, "server listening")
+		)
 	}
 
 	return nil
@@ -63,30 +94,30 @@ func closeBoundListeners(servers []managedServer) {
 	}
 }
 
-func serveServers(servers []managedServer) <-chan serverResult {
-	errCh := make(chan serverResult, len(servers))
+func runServers(servers []managedServer) <-chan serverResult {
+	resultsCh := make(chan serverResult, len(servers))
 	for _, server := range servers {
 		go func(name string, srv *http.Server, listener net.Listener) {
 			if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errCh <- serverResult{name: name, err: fmt.Errorf("%s server serve: %w", name, err)}
+				resultsCh <- serverResult{name: name, err: fmt.Errorf("serve %s server: %w", name, err)}
 				return
 			}
 
-			errCh <- serverResult{name: name}
+			resultsCh <- serverResult{name: name}
 		}(server.name, server.server, server.listener)
 	}
 
-	return errCh
+	return resultsCh
 }
 
 func shutdownServers(servers []managedServer) error {
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), defaultServerShutdownTimeout)
-	defer shutdownCancel()
-
 	for _, server := range servers {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), defaultServerShutdownTimeout)
 		if err := server.server.Shutdown(shutdownCtx); err != nil {
+			shutdownCancel()
 			return fmt.Errorf("shutdown %s server: %w", server.name, err)
 		}
+		shutdownCancel()
 	}
 
 	return nil

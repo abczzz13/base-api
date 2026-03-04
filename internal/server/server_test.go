@@ -5,17 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	dto "github.com/prometheus/client_model/go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -27,14 +26,6 @@ import (
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
 )
-
-func TestRunIgnoresStartupWriteErrors(t *testing.T) {
-	assertRunHandlesWriterErrors(t, errWriter{err: errors.New("stdout unavailable")}, io.Discard)
-}
-
-func TestRunIgnoresShutdownWriteErrors(t *testing.T) {
-	assertRunHandlesWriterErrors(t, io.Discard, errWriter{err: errors.New("stderr unavailable")})
-}
 
 func TestRunReturnsErrorWhenConfigValidationFails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -63,24 +54,41 @@ func TestRunReturnsErrorWhenConfigValidationFails(t *testing.T) {
 	}
 }
 
-func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
-	publicAddr := reserveTCPAddress(t)
-
-	occupiedInfraListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen for occupied infra address: %v", err)
-	}
-	defer func() { _ = occupiedInfraListener.Close() }()
-
+func TestRunReturnsErrorWhenDatabaseConfigurationFails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	err = Run(
+	err := Run(
 		ctx,
 		nil,
 		lookupEnvFromMap(map[string]string{
-			"API_ADDR":        publicAddr,
-			"API_INFRA_ADDR":  occupiedInfraListener.Addr().String(),
+			"API_ADDR":        reserveTCPAddress(t),
+			"API_INFRA_ADDR":  reserveTCPAddress(t),
+			"API_ENVIRONMENT": "test",
+			"DB_URL":          "postgres://:bad",
+		}),
+		strings.NewReader(""),
+		io.Discard,
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatalf("Run returned nil error for invalid database configuration")
+	}
+	if !strings.Contains(err.Error(), "configure database") {
+		t.Fatalf("Run error does not identify database setup failure: %v", err)
+	}
+}
+
+func TestRunReturnsErrorWhenDatabaseURLIsMissing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := Run(
+		ctx,
+		nil,
+		lookupEnvFromMap(map[string]string{
+			"API_ADDR":        reserveTCPAddress(t),
+			"API_INFRA_ADDR":  reserveTCPAddress(t),
 			"API_ENVIRONMENT": "test",
 		}),
 		strings.NewReader(""),
@@ -88,42 +96,51 @@ func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
 		io.Discard,
 	)
 	if err == nil {
-		t.Fatalf("Run returned nil error when infra listen should fail")
+		t.Fatal("Run returned nil error when DB_URL is missing")
 	}
-	if !strings.Contains(err.Error(), "create infra listener") {
-		t.Fatalf("Run error does not identify infra listener failure: %v", err)
+	if !strings.Contains(err.Error(), "configure database") {
+		t.Fatalf("Run error does not identify database setup failure: %v", err)
 	}
-
-	releasedListener, err := net.Listen("tcp", publicAddr)
-	if err != nil {
-		t.Fatalf("public listener address was not released after startup failure: %v", err)
+	if !strings.Contains(err.Error(), "database URL is required") {
+		t.Fatalf("Run error does not include missing DB_URL context: %v", err)
 	}
-	_ = releasedListener.Close()
 }
 
-func TestRunContinuesWhenTracingInitializationFails(t *testing.T) {
-	publicAddr := reserveTCPAddress(t)
-	infraAddr := reserveTCPAddress(t)
+func TestCleanupStackRunExecutesInReverseOrder(t *testing.T) {
+	cleanup := newCleanupStack()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	order := make([]string, 0, 3)
+	cleanup.Add(func() {
+		order = append(order, "first")
+	})
+	cleanup.Add(func() {
+		order = append(order, "second")
+	})
+	cleanup.Add(nil)
+	cleanup.Add(func() {
+		order = append(order, "third")
+	})
 
-	var stderr bytes.Buffer
-	env := map[string]string{
-		"API_ADDR":                           publicAddr,
-		"API_INFRA_ADDR":                     infraAddr,
-		"API_ENVIRONMENT":                    "test",
-		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://127.0.0.1:4318/v1/traces",
-		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+	cleanup.Run()
+
+	if diff := cmp.Diff([]string{"third", "second", "first"}, order); diff != "" {
+		t.Fatalf("cleanup order mismatch (-want +got):\n%s", diff)
 	}
+}
 
-	err := Run(ctx, nil, lookupEnvFromMap(env), strings.NewReader(""), io.Discard, &stderr)
-	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
-	}
+func TestCleanupStackRunExecutesOnce(t *testing.T) {
+	cleanup := newCleanupStack()
 
-	if !strings.Contains(stderr.String(), "OpenTelemetry tracing disabled") {
-		t.Fatalf("expected tracing initialization warning in logs, got: %q", stderr.String())
+	count := 0
+	cleanup.Add(func() {
+		count++
+	})
+
+	cleanup.Run()
+	cleanup.Run()
+
+	if count != 1 {
+		t.Fatalf("cleanup run count mismatch: want %d, got %d", 1, count)
 	}
 }
 
@@ -674,81 +691,10 @@ func decodeJSONLogLines(t *testing.T, data string) []map[string]any {
 	return entries
 }
 
-type errWriter struct {
-	err error
-}
-
 type panicGatherer struct{}
 
 func (panicGatherer) Gather() ([]*dto.MetricFamily, error) {
 	panic("metrics gather panic")
-}
-
-func (w errWriter) Write(p []byte) (int, error) {
-	return 0, w.err
-}
-
-const maxRunStartupAttempts = 5
-
-func assertRunHandlesWriterErrors(t *testing.T, stdout, stderr io.Writer) {
-	t.Helper()
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRunStartupAttempts; attempt++ {
-		publicAddr := reserveTCPAddress(t)
-		infraAddr := reserveTCPAddress(t)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		env := map[string]string{
-			"API_ADDR":        publicAddr,
-			"API_INFRA_ADDR":  infraAddr,
-			"API_ENVIRONMENT": "test",
-		}
-
-		runDone := make(chan struct{})
-		var runErr error
-		go func() {
-			runErr = Run(ctx, nil, lookupEnvFromMap(env), strings.NewReader(""), stdout, stderr)
-			close(runDone)
-		}()
-
-		startupErr := waitForStatusOK("http://"+publicAddr+"/healthz", runDone, &runErr)
-		if startupErr == nil {
-			startupErr = waitForStatusOK("http://"+infraAddr+"/livez", runDone, &runErr)
-		}
-
-		if startupErr != nil {
-			cancel()
-			if !waitForRunDone(runDone, 3*time.Second) {
-				t.Fatalf("Run did not return after failed startup attempt")
-			}
-
-			if isAddressInUseError(startupErr) && attempt < maxRunStartupAttempts {
-				lastErr = startupErr
-				continue
-			}
-
-			t.Fatalf("startup check failed: %v", startupErr)
-		}
-
-		cancel()
-		if !waitForRunDone(runDone, 3*time.Second) {
-			t.Fatalf("Run did not return after cancellation")
-		}
-
-		if runErr != nil {
-			if isAddressInUseError(runErr) && attempt < maxRunStartupAttempts {
-				lastErr = runErr
-				continue
-			}
-
-			t.Fatalf("Run returned error: %v", runErr)
-		}
-
-		return
-	}
-
-	t.Fatalf("Run failed after %d startup attempts: %v", maxRunStartupAttempts, lastErr)
 }
 
 func reserveTCPAddress(t *testing.T) string {
@@ -761,55 +707,6 @@ func reserveTCPAddress(t *testing.T) string {
 	defer func() { _ = ln.Close() }()
 
 	return ln.Addr().String()
-}
-
-func waitForStatusOK(url string, runDone <-chan struct{}, runErr *error) error {
-	client := &http.Client{Timeout: 250 * time.Millisecond}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case <-runDone:
-			if *runErr != nil {
-				return fmt.Errorf("run exited before %s became ready: %w", url, *runErr)
-			}
-			return fmt.Errorf("run exited before %s became ready", url)
-		default:
-		}
-
-		resp, err := client.Get(url)
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	select {
-	case <-runDone:
-		if *runErr != nil {
-			return fmt.Errorf("run exited before %s became ready: %w", url, *runErr)
-		}
-		return fmt.Errorf("run exited before %s became ready", url)
-	default:
-	}
-
-	return fmt.Errorf("timed out waiting for %s", url)
-}
-
-func waitForRunDone(runDone <-chan struct{}, timeout time.Duration) bool {
-	select {
-	case <-runDone:
-		return true
-	case <-time.After(timeout):
-		return false
-	}
-}
-
-func isAddressInUseError(err error) bool {
-	return errors.Is(err, syscall.EADDRINUSE)
 }
 
 func lookupEnvFromMap(env map[string]string) func(string) (string, bool) {

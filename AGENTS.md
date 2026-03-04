@@ -25,3 +25,4 @@ All changed or new features must be accompanied by tests. Preferred approach:
 
 - Use table-driven tests with the standard library
 - Use `cmp.Diff` from `github.com/google/go-cmp/cmp` for comparisons
+- Production code must not contain test hook abstractions or global hooks

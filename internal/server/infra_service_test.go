@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +75,20 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "returns not ready when checker is nil",
+			cfg:  config.Config{ReadyzTimeout: time.Second},
+			checkers: []ReadinessChecker{
+				nil,
+			},
+			wantErr: &infraoas.DefaultErrorStatusCode{
+				StatusCode: 503,
+				Response: infraoas.ErrorResponse{
+					Code:    "not_ready",
+					Message: "service is not ready",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,6 +116,11 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.wantErr, gotErr); diff != "" {
 				t.Fatalf("GetReadyz error mismatch (-want +got):\n%s", diff)
+			}
+			if tt.name == "returns not ready when checker fails" {
+				if strings.Contains(gotErr.Response.Message, "dependency down") {
+					t.Fatalf("GetReadyz leaked checker details in response message: %q", gotErr.Response.Message)
+				}
 			}
 		})
 	}
@@ -140,6 +160,94 @@ func TestInfraServiceGetReadyzTimeoutContext(t *testing.T) {
 
 			if diff := cmp.Diff(tt.wantDeadline, hadDeadline); diff != "" {
 				t.Fatalf("readiness deadline mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInfraServiceGetReadyzUsesSingleTimeoutBudget(t *testing.T) {
+	readyzTimeout := 40 * time.Millisecond
+
+	checker2Called := false
+	var checker2Err error
+
+	checker1 := ReadinessCheckerFunc(func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	})
+	checker2 := ReadinessCheckerFunc(func(ctx context.Context) error {
+		checker2Called = true
+		checker2Err = ctx.Err()
+		return checker2Err
+	})
+
+	svc := newInfraService(config.Config{ReadyzTimeout: readyzTimeout}, checker1, checker2)
+	resp, err := svc.GetReadyz(context.Background())
+	if resp != nil {
+		t.Fatalf("GetReadyz response mismatch (-want +got):\n%s", cmp.Diff((*infraoas.ProbeResponse)(nil), resp))
+	}
+
+	var gotErr *infraoas.DefaultErrorStatusCode
+	if !errors.As(err, &gotErr) {
+		t.Fatalf("GetReadyz error type mismatch: got %T (%v)", err, err)
+	}
+	if gotErr.StatusCode != 503 {
+		t.Fatalf("status code mismatch: want %d, got %d", 503, gotErr.StatusCode)
+	}
+	if gotErr.Response.Code != "not_ready" {
+		t.Fatalf("error code mismatch: want %q, got %q", "not_ready", gotErr.Response.Code)
+	}
+	if !checker2Called {
+		t.Fatal("second readiness checker was not called")
+	}
+	if !errors.Is(checker2Err, context.DeadlineExceeded) {
+		t.Fatalf("expected second checker context deadline exceeded, got %v", checker2Err)
+	}
+}
+
+func TestReadinessCheckerLogName(t *testing.T) {
+	tests := []struct {
+		name    string
+		checker ReadinessChecker
+		index   int
+		want    string
+	}{
+		{
+			name: "uses explicit checker name",
+			checker: withReadinessCheckerName("database", ReadinessCheckerFunc(func(context.Context) error {
+				return nil
+			})),
+			index: 3,
+			want:  "database",
+		},
+		{
+			name: "falls back to index when checker is unnamed",
+			checker: ReadinessCheckerFunc(func(context.Context) error {
+				return nil
+			}),
+			index: 2,
+			want:  "checker_2",
+		},
+		{
+			name: "falls back to index when checker name is empty",
+			checker: withReadinessCheckerName("   ", ReadinessCheckerFunc(func(context.Context) error {
+				return nil
+			})),
+			index: 1,
+			want:  "checker_1",
+		},
+		{
+			name:    "falls back to index when checker is nil",
+			checker: nil,
+			index:   0,
+			want:    "checker_0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := readinessCheckerLogName(tt.checker, tt.index); got != tt.want {
+				t.Fatalf("checker log name mismatch: want %q, got %q", tt.want, got)
 			}
 		})
 	}

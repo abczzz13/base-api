@@ -49,6 +49,7 @@ func (l loader) load() (Config, error) {
 	l.loadCORS(&cfg, &errList)
 	l.loadCSRF(&cfg, &errList)
 	l.loadOTEL(&cfg, &errList)
+	l.loadDB(&cfg, &errList)
 	validateConfig(cfg, &errList)
 
 	if len(errList) > 0 {
@@ -247,6 +248,80 @@ func (l loader) loadOTEL(cfg *Config, errList *[]error) {
 	}
 }
 
+func (l loader) loadDB(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveString(keyDBURL); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.URL = value
+	}
+
+	if value, ok, err := l.resolveNonNegativeInt32(keyDBMinConns); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.MinConns = value
+	}
+
+	if value, ok, err := l.resolvePositiveInt32(keyDBMaxConns); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.MaxConns = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyDBMaxConnLifetime); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.MaxConnLifetime = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyDBMaxConnIdleTime); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.MaxConnIdleTime = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyDBHealthCheckPeriod); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.HealthCheckPeriod = value
+	}
+
+	if value, ok, err := l.resolveNonNegativeDuration(keyDBConnectTimeout); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.ConnectTimeout = value
+	}
+
+	if value, ok, err := l.resolveBool(keyDBMigrateOnStartup); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.MigrateOnStartup = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyDBMigrateTimeout); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.MigrateTimeout = value
+	}
+
+	if value, ok, err := l.resolvePositiveInt32(keyDBStartupMaxAttempts); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.StartupMaxAttempts = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyDBStartupBackoffInitial); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.StartupBackoffInitial = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyDBStartupBackoffMax); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.DB.StartupBackoffMax = value
+	}
+}
+
 func validateConfig(cfg Config, errList *[]error) {
 	if cfg.CORS.AllowCredentials {
 		for _, origin := range cfg.CORS.AllowedOrigins {
@@ -272,6 +347,26 @@ func validateConfig(cfg Config, errList *[]error) {
 
 	appendLoadError(errList, validateAddress(keyAPIAddr, cfg.Address))
 	appendLoadError(errList, validateAddress(keyAPIInfraAddr, cfg.InfraAddress))
+
+	if cfg.DB.MinConns > cfg.DB.MaxConns {
+		appendLoadError(errList, fmt.Errorf(
+			"invalid database pool configuration: %s=%d cannot exceed %s=%d",
+			keyDBMinConns,
+			cfg.DB.MinConns,
+			keyDBMaxConns,
+			cfg.DB.MaxConns,
+		))
+	}
+
+	if cfg.DB.StartupBackoffInitial > cfg.DB.StartupBackoffMax {
+		appendLoadError(errList, fmt.Errorf(
+			"invalid database startup retry configuration: %s=%s cannot exceed %s=%s",
+			keyDBStartupBackoffInitial,
+			cfg.DB.StartupBackoffInitial,
+			keyDBStartupBackoffMax,
+			cfg.DB.StartupBackoffMax,
+		))
+	}
 }
 
 func appendLoadError(errList *[]error, err error) {
@@ -359,6 +454,23 @@ func (l loader) resolvePositiveDuration(key string) (time.Duration, bool, error)
 	return parsed, true, nil
 }
 
+func (l loader) resolveNonNegativeDuration(key string) (time.Duration, bool, error) {
+	value, set, err := l.resolveString(key)
+	if err != nil || !set {
+		return 0, false, err
+	}
+
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid duration for %s=%q", key, value)
+	}
+	if parsed < 0 {
+		return 0, false, fmt.Errorf("negative duration for %s=%q", key, value)
+	}
+
+	return parsed, true, nil
+}
+
 func (l loader) resolveFloat(key string) (float64, bool, error) {
 	value, set, err := l.resolveString(key)
 	if err != nil || !set {
@@ -375,6 +487,46 @@ func (l loader) resolveFloat(key string) (float64, bool, error) {
 	}
 
 	return parsed, true, nil
+}
+
+func (l loader) resolvePositiveInt32(key string) (int32, bool, error) {
+	parsed, set, err := l.resolveInt32(key)
+	if err != nil || !set {
+		return 0, set, err
+	}
+
+	if parsed <= 0 {
+		return 0, false, fmt.Errorf("non-positive integer for %s=%d", key, parsed)
+	}
+
+	return parsed, true, nil
+}
+
+func (l loader) resolveNonNegativeInt32(key string) (int32, bool, error) {
+	parsed, set, err := l.resolveInt32(key)
+	if err != nil || !set {
+		return 0, set, err
+	}
+
+	if parsed < 0 {
+		return 0, false, fmt.Errorf("negative integer for %s=%d", key, parsed)
+	}
+
+	return parsed, true, nil
+}
+
+func (l loader) resolveInt32(key string) (int32, bool, error) {
+	value, set, err := l.resolveString(key)
+	if err != nil || !set {
+		return 0, false, err
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid integer for %s=%q", key, value)
+	}
+
+	return int32(parsed), true, nil
 }
 
 func (l loader) isConfigured(key string) (bool, error) {

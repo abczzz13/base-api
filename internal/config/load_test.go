@@ -28,16 +28,28 @@ func TestLoad(t *testing.T) {
 		{
 			name: "uses explicit values",
 			env: map[string]string{
-				keyAPIAddr:              "0.0.0.0:8081",
-				keyAPIInfraAddr:         "127.0.0.1:9191",
-				keyAPIEnvironment:       "production",
-				keyLogFormat:            "json",
-				keyLogLevel:             "debug",
-				keyAPIReadyzTimeout:     "750ms",
-				keyAPIReadHeaderTimeout: "3s",
-				keyAPIReadTimeout:       "11s",
-				keyAPIWriteTimeout:      "25s",
-				keyAPIIdleTimeout:       "45s",
+				keyAPIAddr:                 "0.0.0.0:8081",
+				keyAPIInfraAddr:            "127.0.0.1:9191",
+				keyAPIEnvironment:          "production",
+				keyLogFormat:               "json",
+				keyLogLevel:                "debug",
+				keyAPIReadyzTimeout:        "750ms",
+				keyAPIReadHeaderTimeout:    "3s",
+				keyAPIReadTimeout:          "11s",
+				keyAPIWriteTimeout:         "25s",
+				keyAPIIdleTimeout:          "45s",
+				keyDBURL:                   "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
+				keyDBMinConns:              "2",
+				keyDBMaxConns:              "40",
+				keyDBMaxConnLifetime:       "2h",
+				keyDBMaxConnIdleTime:       "20m",
+				keyDBHealthCheckPeriod:     "45s",
+				keyDBConnectTimeout:        "7s",
+				keyDBMigrateOnStartup:      "false",
+				keyDBMigrateTimeout:        "2m",
+				keyDBStartupMaxAttempts:    "7",
+				keyDBStartupBackoffInitial: "2s",
+				keyDBStartupBackoffMax:     "20s",
 			},
 			want: func() Config {
 				cfg := defaultConfig()
@@ -51,6 +63,18 @@ func TestLoad(t *testing.T) {
 				cfg.ReadTimeout = 11 * time.Second
 				cfg.WriteTimeout = 25 * time.Second
 				cfg.IdleTimeout = 45 * time.Second
+				cfg.DB.URL = "postgres://base@127.0.0.1:5432/base_api?sslmode=disable"
+				cfg.DB.MinConns = 2
+				cfg.DB.MaxConns = 40
+				cfg.DB.MaxConnLifetime = 2 * time.Hour
+				cfg.DB.MaxConnIdleTime = 20 * time.Minute
+				cfg.DB.HealthCheckPeriod = 45 * time.Second
+				cfg.DB.ConnectTimeout = 7 * time.Second
+				cfg.DB.MigrateOnStartup = false
+				cfg.DB.MigrateTimeout = 2 * time.Minute
+				cfg.DB.StartupMaxAttempts = 7
+				cfg.DB.StartupBackoffInitial = 2 * time.Second
+				cfg.DB.StartupBackoffMax = 20 * time.Second
 				return cfg
 			}(),
 		},
@@ -136,6 +160,37 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("Load mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestLoadDBConnectTimeoutDefaultsWhenOnlyURLConnectTimeoutIsSet(t *testing.T) {
+	cfg, err := Load(lookupEnvFromMap(map[string]string{
+		keyDBURL: "postgres://base@127.0.0.1:5432/base_api?sslmode=disable&connect_timeout=13",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.DB.ConnectTimeout != defaultDBConnectTimeout {
+		t.Fatalf(
+			"DB connect timeout mismatch: want default %s, got %s",
+			defaultDBConnectTimeout,
+			cfg.DB.ConnectTimeout,
+		)
+	}
+}
+
+func TestLoadDBConnectTimeoutAllowsExplicitZeroToDisableOverride(t *testing.T) {
+	cfg, err := Load(lookupEnvFromMap(map[string]string{
+		keyDBURL:            "postgres://base@127.0.0.1:5432/base_api?sslmode=disable&connect_timeout=13",
+		keyDBConnectTimeout: "0s",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.DB.ConnectTimeout != 0 {
+		t.Fatalf("DB connect timeout mismatch: want 0s, got %s", cfg.DB.ConnectTimeout)
 	}
 }
 
@@ -255,6 +310,78 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 			wantContains: []string{"invalid API_ADDR=\"invalid-address\""},
 		},
 		{
+			name: "invalid DB max connections fails",
+			env: map[string]string{
+				keyDBMaxConns: "not-an-int",
+			},
+			wantContains: []string{"invalid integer for DB_MAX_CONNS=\"not-an-int\""},
+		},
+		{
+			name: "invalid DB min connections fails",
+			env: map[string]string{
+				keyDBMinConns: "-1",
+			},
+			wantContains: []string{"negative integer for DB_MIN_CONNS=-1"},
+		},
+		{
+			name: "invalid DB migrate timeout fails",
+			env: map[string]string{
+				keyDBMigrateTimeout: "0s",
+			},
+			wantContains: []string{"non-positive duration for DB_MIGRATE_TIMEOUT=\"0s\""},
+		},
+		{
+			name: "negative DB connect timeout fails",
+			env: map[string]string{
+				keyDBConnectTimeout: "-1s",
+			},
+			wantContains: []string{"negative duration for DB_CONNECT_TIMEOUT=\"-1s\""},
+		},
+		{
+			name: "invalid DB migrate on startup boolean fails",
+			env: map[string]string{
+				keyDBMigrateOnStartup: "sometimes",
+			},
+			wantContains: []string{"invalid boolean for DB_MIGRATE_ON_STARTUP=\"sometimes\""},
+		},
+		{
+			name: "invalid DB startup max attempts fails",
+			env: map[string]string{
+				keyDBStartupMaxAttempts: "0",
+			},
+			wantContains: []string{"non-positive integer for DB_STARTUP_MAX_ATTEMPTS=0"},
+		},
+		{
+			name: "invalid DB startup backoff initial fails",
+			env: map[string]string{
+				keyDBStartupBackoffInitial: "0s",
+			},
+			wantContains: []string{"non-positive duration for DB_STARTUP_BACKOFF_INITIAL=\"0s\""},
+		},
+		{
+			name: "invalid DB startup backoff max fails",
+			env: map[string]string{
+				keyDBStartupBackoffMax: "-1s",
+			},
+			wantContains: []string{"non-positive duration for DB_STARTUP_BACKOFF_MAX=\"-1s\""},
+		},
+		{
+			name: "invalid DB startup backoff ordering fails",
+			env: map[string]string{
+				keyDBStartupBackoffInitial: "5s",
+				keyDBStartupBackoffMax:     "2s",
+			},
+			wantContains: []string{"invalid database startup retry configuration: DB_STARTUP_BACKOFF_INITIAL=5s cannot exceed DB_STARTUP_BACKOFF_MAX=2s"},
+		},
+		{
+			name: "DB min connections above max fails",
+			env: map[string]string{
+				keyDBMinConns: "50",
+				keyDBMaxConns: "10",
+			},
+			wantContains: []string{"invalid database pool configuration: DB_MIN_CONNS=50 cannot exceed DB_MAX_CONNS=10"},
+		},
+		{
 			name: "aggregates multiple failures",
 			env: map[string]string{
 				keyLogFormat:        "xml",
@@ -312,6 +439,18 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 		keyOTELTracesSamplerArg:           "0.25",
 		keyOTELExporterOTLPEndpoint:       "http://localhost:4318",
 		keyOTELExporterOTLPTracesEndpoint: "http://localhost:4318/v1/traces",
+		keyDBURL:                          "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
+		keyDBMinConns:                     "2",
+		keyDBMaxConns:                     "40",
+		keyDBMaxConnLifetime:              "2h",
+		keyDBMaxConnIdleTime:              "20m",
+		keyDBHealthCheckPeriod:            "45s",
+		keyDBConnectTimeout:               "7s",
+		keyDBMigrateOnStartup:             "false",
+		keyDBMigrateTimeout:               "2m",
+		keyDBStartupMaxAttempts:           "9",
+		keyDBStartupBackoffInitial:        "3s",
+		keyDBStartupBackoffMax:            "40s",
 	}
 
 	env := make(map[string]string, len(values))
@@ -352,6 +491,18 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	want.OTEL.TracingEnabled = true
 	want.OTEL.TracesSampler = telemetry.TraceSamplerTraceIDRatio
 	want.OTEL.TracesSamplerArg = float64Ptr(0.25)
+	want.DB.URL = "postgres://base@127.0.0.1:5432/base_api?sslmode=disable"
+	want.DB.MinConns = 2
+	want.DB.MaxConns = 40
+	want.DB.MaxConnLifetime = 2 * time.Hour
+	want.DB.MaxConnIdleTime = 20 * time.Minute
+	want.DB.HealthCheckPeriod = 45 * time.Second
+	want.DB.ConnectTimeout = 7 * time.Second
+	want.DB.MigrateOnStartup = false
+	want.DB.MigrateTimeout = 2 * time.Minute
+	want.DB.StartupMaxAttempts = 9
+	want.DB.StartupBackoffInitial = 3 * time.Second
+	want.DB.StartupBackoffMax = 40 * time.Second
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("Load mismatch (-want +got):\n%s", diff)

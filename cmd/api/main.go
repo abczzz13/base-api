@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/abczzz13/base-api/internal/server"
@@ -11,7 +11,7 @@ import (
 func main() {
 	ctx := context.Background()
 	if err := server.Run(ctx, os.Args, os.LookupEnv, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
+		slog.Error("api exited with error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }

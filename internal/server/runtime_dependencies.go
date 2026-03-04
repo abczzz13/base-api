@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
@@ -10,8 +11,10 @@ import (
 )
 
 type runtimeDependencies struct {
-	requestMetrics  *middleware.HTTPRequestMetrics
-	metricsGatherer prometheus.Gatherer
+	requestMetrics    *middleware.HTTPRequestMetrics
+	metricsGatherer   prometheus.Gatherer
+	metricsRegisterer prometheus.Registerer
+	database          *pgxpool.Pool
 }
 
 func newRuntimeDependencies() (runtimeDependencies, error) {
@@ -31,7 +34,8 @@ func newRuntimeDependencies() (runtimeDependencies, error) {
 	}
 
 	return runtimeDependencies{
-		requestMetrics:  requestMetrics,
-		metricsGatherer: registry,
+		requestMetrics:    requestMetrics,
+		metricsGatherer:   registry,
+		metricsRegisterer: registry,
 	}, nil
 }

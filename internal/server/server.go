@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -55,13 +56,24 @@ func Run(
 		slog.String("go_version", buildMetadata.GoVersion),
 	)
 
-	shutdownTracing := setupTracing(ctx, &cfg)
-	defer shutdownTracing()
+	runtimeCleanup := newCleanupStack()
+	defer runtimeCleanup.Run()
+
+	tracingEnabled, shutdownTracing := setupTracing(ctx, cfg)
+	cfg.OTEL.TracingEnabled = tracingEnabled
+	runtimeCleanup.Add(shutdownTracing)
 
 	runtimeDeps, err := newRuntimeDependencies()
 	if err != nil {
 		return fmt.Errorf("configure HTTP metrics: %w", err)
 	}
+
+	database, databaseShutdown, err := setupDatabase(ctx, cfg.DB, runtimeDeps.metricsRegisterer)
+	if err != nil {
+		return fmt.Errorf("configure database: %w", err)
+	}
+	runtimeDeps.database = database
+	runtimeCleanup.Add(databaseShutdown)
 
 	publicHandler, err := newPublicHandler(cfg, runtimeDeps)
 	if err != nil {
@@ -88,22 +100,22 @@ func Run(
 		return err
 	}
 
-	errCh := serveServers(servers)
+	serverResults := runServers(servers)
 
 	shutdownAll := func() error {
-		defer shutdownTracing()
-		return shutdownServers(servers)
+		shutdownErr := shutdownServers(servers)
+		runtimeCleanup.Run()
+		return shutdownErr
 	}
 
 	select {
-	case res := <-errCh:
-		if err := shutdownAll(); err != nil {
-			return err
+	case res := <-serverResults:
+		serveErr := res.err
+		if serveErr == nil {
+			serveErr = fmt.Errorf("%s server stopped unexpectedly", res.name)
 		}
-		if res.err != nil {
-			return res.err
-		}
-		return fmt.Errorf("%s server stopped unexpectedly", res.name)
+
+		return errors.Join(serveErr, shutdownAll())
 	case <-ctx.Done():
 		slog.InfoContext(ctx, "shutting down")
 
@@ -112,7 +124,7 @@ func Run(
 		}
 
 		for range servers {
-			res := <-errCh
+			res := <-serverResults
 			if res.err != nil {
 				return res.err
 			}

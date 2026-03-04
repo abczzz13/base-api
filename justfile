@@ -9,6 +9,9 @@ gofumpt_version := "v0.9.2"
 goimports_version := "v0.42.0"
 govulncheck_version := "v1.1.4"
 gitleaks_version := "v8.30.0"
+sqlc_version := "v1.27.0"
+goose_version := "v3.27.0"
+sqlc_docker_image := "sqlc/sqlc:1.27.0"
 goimports_local_prefix := "github.com/abczzz13/base-api"
 bin_dir := ".bin"
 golangci_lint := ".bin/golangci-lint"
@@ -17,6 +20,11 @@ gofumpt := ".bin/gofumpt"
 goimports := ".bin/goimports"
 govulncheck := ".bin/govulncheck"
 gitleaks := ".bin/gitleaks"
+sqlc := ".bin/sqlc"
+goose := ".bin/goose"
+db_migrations_dir := "db/migrations"
+sqlc_config := "sqlc.yaml"
+db_url_default := "postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=disable"
 docker_compose := "docker compose --env-file .env"
 go_api_package := "./cmd/api"
 yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows"
@@ -57,6 +65,9 @@ compose-logs *args: env-init
 
 compose-build: env-init
     {{docker_compose}} build
+
+db-start: env-init
+    {{docker_compose}} up -d postgres
 
 build-go:
     go build ./...
@@ -110,6 +121,51 @@ tools:
     GOBIN="${PWD}/{{bin_dir}}" go install golang.org/x/tools/cmd/goimports@{{goimports_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install golang.org/x/vuln/cmd/govulncheck@{{govulncheck_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/zricethezav/gitleaks/v8@{{gitleaks_version}}
+    GOBIN="${PWD}/{{bin_dir}}" go install github.com/sqlc-dev/sqlc/cmd/sqlc@{{sqlc_version}} || printf 'Warning: failed to install sqlc locally; sqlc commands will use Docker fallback\n'
+    GOBIN="${PWD}/{{bin_dir}}" go install github.com/pressly/goose/v3/cmd/goose@{{goose_version}}
+
+[script]
+db-up: env-init
+    [ -x "{{goose}}" ] || { printf 'Missing required tool: {{goose}}\nInstall with: just tools\n'; exit 1; }
+    db_url="${DB_URL:-{{db_url_default}}}"
+    {{goose}} -dir {{db_migrations_dir}} postgres "$db_url" up
+
+[script]
+db-down: env-init
+    [ -x "{{goose}}" ] || { printf 'Missing required tool: {{goose}}\nInstall with: just tools\n'; exit 1; }
+    db_url="${DB_URL:-{{db_url_default}}}"
+    {{goose}} -dir {{db_migrations_dir}} postgres "$db_url" down
+
+[script]
+db-status: env-init
+    [ -x "{{goose}}" ] || { printf 'Missing required tool: {{goose}}\nInstall with: just tools\n'; exit 1; }
+    db_url="${DB_URL:-{{db_url_default}}}"
+    {{goose}} -dir {{db_migrations_dir}} postgres "$db_url" status
+
+db-create name:
+    [ -x "{{goose}}" ] || { printf 'Missing required tool: {{goose}}\nInstall with: just tools\n'; exit 1; }
+    {{goose}} -dir {{db_migrations_dir}} create {{name}} sql
+
+sqlc-generate:
+    sqlc_cmd=()
+    if [ -x "{{sqlc}}" ]; then sqlc_cmd=("{{sqlc}}"); else sqlc_cmd=(docker run --rm -v "${PWD}:/src" -w /src "{{sqlc_docker_image}}"); fi
+    "${sqlc_cmd[@]}" generate --file {{sqlc_config}}
+
+[script]
+sqlc-check:
+    sqlc_cmd=()
+    if [ -x "{{sqlc}}" ]; then sqlc_cmd=("{{sqlc}}"); else sqlc_cmd=(docker run --rm -v "${PWD}:/src" -w /src "{{sqlc_docker_image}}"); fi
+
+    before="$(git status --porcelain -- internal/dbsqlc)"
+    "${sqlc_cmd[@]}" generate --file {{sqlc_config}}
+    after="$(git status --porcelain -- internal/dbsqlc)"
+
+    if [ "$before" != "$after" ]; then
+        printf 'sqlc generated code is out of date. Run: just sqlc-generate\n'
+        printf 'Status before:\n%s\n' "${before:-<clean>}"
+        printf 'Status after:\n%s\n' "${after:-<clean>}"
+        exit 1
+    fi
 
 [script]
 check-tools:
@@ -229,9 +285,18 @@ security-secrets: check-security-tools
 
 security: security-vuln security-secrets
 
+[script]
 test pattern="" *args:
-    @echo {{ if pattern == "" { "Running full test suite with shuffle..." } else { if pattern == "--" { "Running full test suite with shuffle..." } else { "Running tests matching pattern: " + pattern } } }}
-    @go test -v -p 1 -count=1 ./... {{ if pattern == "" { "-shuffle=on" } else { if pattern == "--" { "-shuffle=on" } else { "-run \"" + pattern + "\"" } } }} {{args}}
+    echo {{ if pattern == "" { "Running full test suite with shuffle..." } else { if pattern == "--" { "Running full test suite with shuffle..." } else { "Running tests matching pattern: " + pattern } } }}
+    if [ -f .env ]; then
+        set -a
+        # shellcheck disable=SC1091
+        source .env
+        set +a
+    fi
+
+    test_db_url="${TEST_DB_URL:-${DB_URL:-{{db_url_default}}}}"
+    TEST_DB_URL="$test_db_url" go test -v -p 1 -count=1 ./... {{ if pattern == "" { "-shuffle=on" } else { if pattern == "--" { "-shuffle=on" } else { "-run \"" + pattern + "\"" } } }} {{args}}
 
 race:
     go test -race ./...
@@ -261,4 +326,4 @@ vet:
 tidy-check:
     before="$(git status --porcelain -- go.mod go.sum)"; go mod tidy; after="$(git status --porcelain -- go.mod go.sum)"; test "$before" = "$after"
 
-check: fmt-go-check lint test
+check: fmt-go-check lint test sqlc-check

@@ -20,7 +20,12 @@ func newInfraHandler(cfg config.Config, deps runtimeDependencies) (http.Handler,
 		return nil, errors.New("metrics gatherer dependency is required")
 	}
 
-	infraService := newInfraService(cfg, defaultReadinessCheckers(cfg)...)
+	var readinessDatabase databaseReadiness
+	if deps.database != nil {
+		readinessDatabase = deps.database
+	}
+
+	infraService := newInfraService(cfg, defaultReadinessCheckers(readinessDatabase)...)
 
 	infraAPI, err := infraoas.NewServer(infraService, infraoas.WithErrorHandler(ogenErrorHandler))
 	if err != nil {

@@ -13,24 +13,21 @@ import (
 
 const defaultTracingShutdownTimeout = 5 * time.Second
 
-func setupTracing(ctx context.Context, cfg *config.Config) func() {
-	if cfg == nil {
-		return func() {}
-	}
-
+func setupTracing(ctx context.Context, cfg config.Config) (bool, func()) {
 	telemetryShutdown := noopTracingShutdown
-	if cfg.OTEL.TracingEnabled {
+	tracingEnabled := cfg.OTEL.TracingEnabled
+	if tracingEnabled {
 		shutdown, err := telemetry.InitTracing(ctx, cfg.OTEL.TelemetryConfig(cfg.Environment, version.GetVersion()))
 		if err != nil {
 			slog.WarnContext(ctx, "OpenTelemetry tracing disabled", "error", err)
-			cfg.OTEL.TracingEnabled = false
+			tracingEnabled = false
 		} else {
 			telemetryShutdown = shutdown
 		}
 	}
 
 	var shutdownTracingOnce sync.Once
-	return func() {
+	return tracingEnabled, func() {
 		shutdownTracingOnce.Do(func() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), defaultTracingShutdownTimeout)
 			defer shutdownCancel()

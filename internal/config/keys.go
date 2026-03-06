@@ -27,6 +27,10 @@ const (
 	keyAPICSRFTrustedOrigins = "API_CSRF_TRUSTED_ORIGINS"
 	keyAPICSRFEnabled        = "API_CSRF_ENABLED"
 
+	keyAPIRequestAuditEnabled           = "API_REQUEST_AUDIT_ENABLED"
+	keyAPIRequestAuditTrustedProxyCIDRs = "API_REQUEST_AUDIT_TRUSTED_PROXY_CIDRS"
+	keyAPIRequestLoggerEnabled          = "API_REQUEST_LOGGER_ENABLED"
+
 	keyOTELServiceName                = "OTEL_SERVICE_NAME"
 	keyOTELSDKDisabled                = "OTEL_SDK_DISABLED"
 	keyOTELTracesSampler              = "OTEL_TRACES_SAMPLER"

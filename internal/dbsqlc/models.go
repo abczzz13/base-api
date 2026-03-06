@@ -5,11 +5,35 @@
 package dbsqlc
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type AppMetadatum struct {
-	Key       string             `json:"key"`
-	Value     string             `json:"value"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+type HttpRequestAudit struct {
+	ID                    int64              `json:"id"`
+	Server                string             `json:"server"`
+	Route                 string             `json:"route"`
+	Method                string             `json:"method"`
+	Path                  string             `json:"path"`
+	Query                 string             `json:"query"`
+	Host                  string             `json:"host"`
+	Scheme                string             `json:"scheme"`
+	Proto                 string             `json:"proto"`
+	StatusCode            int32              `json:"status_code"`
+	DurationMs            int64              `json:"duration_ms"`
+	RequestSizeBytes      int64              `json:"request_size_bytes"`
+	ResponseSizeBytes     int64              `json:"response_size_bytes"`
+	RemoteAddr            string             `json:"remote_addr"`
+	ClientIp              *netip.Addr        `json:"client_ip"`
+	UserAgent             string             `json:"user_agent"`
+	RequestHeaders        []byte             `json:"request_headers"`
+	ResponseHeaders       []byte             `json:"response_headers"`
+	RequestBody           []byte             `json:"request_body"`
+	ResponseBody          []byte             `json:"response_body"`
+	RequestBodyTruncated  bool               `json:"request_body_truncated"`
+	ResponseBodyTruncated bool               `json:"response_body_truncated"`
+	TraceID               string             `json:"trace_id"`
+	SpanID                string             `json:"span_id"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 }

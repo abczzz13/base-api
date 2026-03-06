@@ -2,6 +2,7 @@ package config
 
 import (
 	"log/slog"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -28,6 +29,31 @@ type OTELConfig struct {
 	ServiceName      string
 	TracesSampler    telemetry.TraceSampler
 	TracesSamplerArg *float64
+}
+
+type RequestAuditConfig struct {
+	Enabled           *bool
+	TrustedProxyCIDRs []netip.Prefix
+}
+
+func (c RequestAuditConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+
+	return *c.Enabled
+}
+
+type RequestLoggerConfig struct {
+	Enabled *bool
+}
+
+func (c RequestLoggerConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+
+	return *c.Enabled
 }
 
 type DBConfig struct {
@@ -72,6 +98,8 @@ type Config struct {
 	IdleTimeout       time.Duration
 	CORS              CORSConfig
 	CSRF              CSRFConfig
+	RequestAudit      RequestAuditConfig
+	RequestLogger     RequestLoggerConfig
 	OTEL              OTELConfig
 	DB                DBConfig
 }

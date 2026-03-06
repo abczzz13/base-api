@@ -2,6 +2,7 @@ package config
 
 import (
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/telemetry"
@@ -38,6 +40,8 @@ func TestLoad(t *testing.T) {
 				keyAPIReadTimeout:          "11s",
 				keyAPIWriteTimeout:         "25s",
 				keyAPIIdleTimeout:          "45s",
+				keyAPIRequestAuditEnabled:  "false",
+				keyAPIRequestLoggerEnabled: "false",
 				keyDBURL:                   "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
 				keyDBMinConns:              "2",
 				keyDBMaxConns:              "40",
@@ -63,6 +67,8 @@ func TestLoad(t *testing.T) {
 				cfg.ReadTimeout = 11 * time.Second
 				cfg.WriteTimeout = 25 * time.Second
 				cfg.IdleTimeout = 45 * time.Second
+				cfg.RequestAudit.Enabled = boolPtr(false)
+				cfg.RequestLogger.Enabled = boolPtr(false)
 				cfg.DB.URL = "postgres://base@127.0.0.1:5432/base_api?sslmode=disable"
 				cfg.DB.MinConns = 2
 				cfg.DB.MaxConns = 40
@@ -112,6 +118,20 @@ func TestLoad(t *testing.T) {
 			}(),
 		},
 		{
+			name: "parses request audit trusted proxy CIDRs",
+			env: map[string]string{
+				keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8, 2001:db8::/32, 10.0.0.0/8",
+			},
+			want: func() Config {
+				cfg := defaultConfig()
+				cfg.RequestAudit.TrustedProxyCIDRs = []netip.Prefix{
+					netip.MustParsePrefix("10.0.0.0/8"),
+					netip.MustParsePrefix("2001:db8::/32"),
+				}
+				return cfg
+			}(),
+		},
+		{
 			name: "parses OTEL configuration",
 			env: map[string]string{
 				keyOTELServiceName:                "  base-api-custom  ",
@@ -156,7 +176,7 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("Load returned error: %v", err)
 			}
 
-			if diff := cmp.Diff(tt.want, got); diff != "" {
+			if diff := cmp.Diff(tt.want, got, cmpopts.EquateComparable(netip.Prefix{})); diff != "" {
 				t.Fatalf("Load mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -248,6 +268,27 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 				keyOTELSDKDisabled: "not-a-bool",
 			},
 			wantContains: []string{"invalid boolean for OTEL_SDK_DISABLED=\"not-a-bool\""},
+		},
+		{
+			name: "invalid request audit trusted proxy CIDRs fail",
+			env: map[string]string{
+				keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8,not-a-cidr",
+			},
+			wantContains: []string{"invalid CIDR \"not-a-cidr\" for API_REQUEST_AUDIT_TRUSTED_PROXY_CIDRS"},
+		},
+		{
+			name: "invalid request audit enabled boolean fails",
+			env: map[string]string{
+				keyAPIRequestAuditEnabled: "sure",
+			},
+			wantContains: []string{"invalid boolean for API_REQUEST_AUDIT_ENABLED=\"sure\""},
+		},
+		{
+			name: "invalid request logger enabled boolean fails",
+			env: map[string]string{
+				keyAPIRequestLoggerEnabled: "maybe",
+			},
+			wantContains: []string{"invalid boolean for API_REQUEST_LOGGER_ENABLED=\"maybe\""},
 		},
 		{
 			name: "invalid CORS and CSRF origins fail",
@@ -415,42 +456,45 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	dir := t.TempDir()
 
 	values := map[string]string{
-		keyAPIAddr:                        "127.0.0.1:8081",
-		keyAPIInfraAddr:                   "127.0.0.1:9191",
-		keyAPIEnvironment:                 "production",
-		keyLogFormat:                      "json",
-		keyLogLevel:                       "debug",
-		keyAPIReadyzTimeout:               "750ms",
-		keyAPIReadHeaderTimeout:           "3s",
-		keyAPIReadTimeout:                 "11s",
-		keyAPIWriteTimeout:                "25s",
-		keyAPIIdleTimeout:                 "45s",
-		keyAPICORSAllowedOrigins:          "https://client.example",
-		keyAPICORSAllowedMethods:          "GET,POST",
-		keyAPICORSAllowedHeaders:          "Content-Type,Authorization",
-		keyAPICORSExposedHeaders:          "X-Request-Id",
-		keyAPICORSAllowCredentials:        "true",
-		keyAPICORSMaxAge:                  "10m",
-		keyAPICSRFTrustedOrigins:          "https://client.example",
-		keyAPICSRFEnabled:                 "true",
-		keyOTELServiceName:                "base-api-custom",
-		keyOTELSDKDisabled:                "false",
-		keyOTELTracesSampler:              "traceidratio",
-		keyOTELTracesSamplerArg:           "0.25",
-		keyOTELExporterOTLPEndpoint:       "http://localhost:4318",
-		keyOTELExporterOTLPTracesEndpoint: "http://localhost:4318/v1/traces",
-		keyDBURL:                          "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
-		keyDBMinConns:                     "2",
-		keyDBMaxConns:                     "40",
-		keyDBMaxConnLifetime:              "2h",
-		keyDBMaxConnIdleTime:              "20m",
-		keyDBHealthCheckPeriod:            "45s",
-		keyDBConnectTimeout:               "7s",
-		keyDBMigrateOnStartup:             "false",
-		keyDBMigrateTimeout:               "2m",
-		keyDBStartupMaxAttempts:           "9",
-		keyDBStartupBackoffInitial:        "3s",
-		keyDBStartupBackoffMax:            "40s",
+		keyAPIAddr:                          "127.0.0.1:8081",
+		keyAPIInfraAddr:                     "127.0.0.1:9191",
+		keyAPIEnvironment:                   "production",
+		keyLogFormat:                        "json",
+		keyLogLevel:                         "debug",
+		keyAPIReadyzTimeout:                 "750ms",
+		keyAPIReadHeaderTimeout:             "3s",
+		keyAPIReadTimeout:                   "11s",
+		keyAPIWriteTimeout:                  "25s",
+		keyAPIIdleTimeout:                   "45s",
+		keyAPICORSAllowedOrigins:            "https://client.example",
+		keyAPICORSAllowedMethods:            "GET,POST",
+		keyAPICORSAllowedHeaders:            "Content-Type,Authorization",
+		keyAPICORSExposedHeaders:            "X-Request-Id",
+		keyAPICORSAllowCredentials:          "true",
+		keyAPICORSMaxAge:                    "10m",
+		keyAPICSRFTrustedOrigins:            "https://client.example",
+		keyAPICSRFEnabled:                   "true",
+		keyAPIRequestAuditEnabled:           "false",
+		keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8,192.168.0.0/16",
+		keyAPIRequestLoggerEnabled:          "false",
+		keyOTELServiceName:                  "base-api-custom",
+		keyOTELSDKDisabled:                  "false",
+		keyOTELTracesSampler:                "traceidratio",
+		keyOTELTracesSamplerArg:             "0.25",
+		keyOTELExporterOTLPEndpoint:         "http://localhost:4318",
+		keyOTELExporterOTLPTracesEndpoint:   "http://localhost:4318/v1/traces",
+		keyDBURL:                            "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
+		keyDBMinConns:                       "2",
+		keyDBMaxConns:                       "40",
+		keyDBMaxConnLifetime:                "2h",
+		keyDBMaxConnIdleTime:                "20m",
+		keyDBHealthCheckPeriod:              "45s",
+		keyDBConnectTimeout:                 "7s",
+		keyDBMigrateOnStartup:               "false",
+		keyDBMigrateTimeout:                 "2m",
+		keyDBStartupMaxAttempts:             "9",
+		keyDBStartupBackoffInitial:          "3s",
+		keyDBStartupBackoffMax:              "40s",
 	}
 
 	env := make(map[string]string, len(values))
@@ -487,6 +531,12 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	want.CORS.MaxAge = 10 * time.Minute
 	want.CSRF.TrustedOrigins = []string{"https://client.example"}
 	want.CSRF.Enabled = true
+	want.RequestAudit.Enabled = boolPtr(false)
+	want.RequestAudit.TrustedProxyCIDRs = []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("192.168.0.0/16"),
+	}
+	want.RequestLogger.Enabled = boolPtr(false)
 	want.OTEL.ServiceName = "base-api-custom"
 	want.OTEL.TracingEnabled = true
 	want.OTEL.TracesSampler = telemetry.TraceSamplerTraceIDRatio
@@ -504,7 +554,7 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	want.DB.StartupBackoffInitial = 3 * time.Second
 	want.DB.StartupBackoffMax = 40 * time.Second
 
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(want, got, cmpopts.EquateComparable(netip.Prefix{})); diff != "" {
 		t.Fatalf("Load mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -597,5 +647,9 @@ func lookupEnvFromMap(env map[string]string) LookupEnvFunc {
 }
 
 func float64Ptr(value float64) *float64 {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
 	return &value
 }

@@ -14,13 +14,16 @@ When configured, the API runs pending `goose` migrations on startup unless
 When set, `DB_CONNECT_TIMEOUT` overrides any `connect_timeout` value embedded
 in `DB_URL`. Set `DB_CONNECT_TIMEOUT=0s` to keep `connect_timeout` from
 `DB_URL`.
-The initial baseline migration creates an `app_metadata` table.
+Current migrations create `http_request_audit`.
 
-`sqlc.yaml` uses the canonical schema snapshot in `db/schema.sql` together with
-queries in `db/queries`. Regenerate code with `just sqlc-generate`; CI runs
-`just check`, which includes `sqlc-check` to ensure generated `internal/dbsqlc`
-code is up to date. Query code is currently scaffolding for upcoming runtime
-query integration and is not wired into API handlers yet.
+`sqlc.yaml` uses Goose migrations in `db/migrations` together with queries in
+`db/queries`. Migrations are the schema source of truth. Regenerate code with
+`just sqlc-generate`; CI runs `just check`, which includes `sqlc-check` to
+ensure generated `internal/dbsqlc` code is up to date. Query code is used by
+runtime request-audit persistence (`internal/requestaudit/postgres.go`).
+Request-audit persistence stores redacted headers, JSON bodies, and sensitive
+query-parameter values. Writes are buffered asynchronously to keep request
+handling non-blocking; records are dropped when the audit queue is full.
 
 Common commands:
 

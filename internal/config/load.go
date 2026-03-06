@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -48,6 +49,8 @@ func (l loader) load() (Config, error) {
 	l.loadTimeouts(&cfg, &errList)
 	l.loadCORS(&cfg, &errList)
 	l.loadCSRF(&cfg, &errList)
+	l.loadRequestAudit(&cfg, &errList)
+	l.loadRequestLogger(&cfg, &errList)
 	l.loadOTEL(&cfg, &errList)
 	l.loadDB(&cfg, &errList)
 	validateConfig(cfg, &errList)
@@ -188,6 +191,48 @@ func (l loader) loadCSRF(cfg *Config, errList *[]error) {
 		appendLoadError(errList, err)
 	} else if ok {
 		cfg.CSRF.Enabled = value
+	}
+}
+
+func (l loader) loadRequestAudit(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveBool(keyAPIRequestAuditEnabled); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RequestAudit.Enabled = &value
+	}
+
+	if value, ok, err := l.resolveString(keyAPIRequestAuditTrustedProxyCIDRs); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cidrs := splitAndTrimCSV(value)
+		trustedProxyCIDRs := make([]netip.Prefix, 0, len(cidrs))
+		seen := make(map[netip.Prefix]struct{}, len(cidrs))
+
+		for _, cidr := range cidrs {
+			parsed, parseErr := netip.ParsePrefix(cidr)
+			if parseErr != nil {
+				appendLoadError(errList, fmt.Errorf("invalid CIDR %q for %s", cidr, keyAPIRequestAuditTrustedProxyCIDRs))
+				continue
+			}
+
+			normalized := parsed.Masked()
+			if _, alreadySeen := seen[normalized]; alreadySeen {
+				continue
+			}
+
+			seen[normalized] = struct{}{}
+			trustedProxyCIDRs = append(trustedProxyCIDRs, normalized)
+		}
+
+		cfg.RequestAudit.TrustedProxyCIDRs = trustedProxyCIDRs
+	}
+}
+
+func (l loader) loadRequestLogger(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveBool(keyAPIRequestLoggerEnabled); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RequestLogger.Enabled = &value
 	}
 }
 

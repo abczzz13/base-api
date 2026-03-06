@@ -12,11 +12,8 @@ func testDatabaseURL(tb testing.TB) string {
 	if value := strings.TrimSpace(os.Getenv("TEST_DB_URL")); value != "" {
 		return value
 	}
-	if value := strings.TrimSpace(os.Getenv("DB_URL")); value != "" {
-		return value
-	}
 
-	tb.Fatal("database-backed tests require TEST_DB_URL or DB_URL")
+	tb.Skip("set TEST_DB_URL to run database-backed tests")
 
 	return ""
 }

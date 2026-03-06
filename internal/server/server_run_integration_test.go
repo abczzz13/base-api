@@ -12,17 +12,24 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/abczzz13/base-api/internal/config"
+	"github.com/abczzz13/base-api/internal/postgres"
 )
 
 func TestRunIgnoresStartupWriteErrors(t *testing.T) {
-	assertRunHandlesWriterErrors(t, errWriter{err: errors.New("stdout unavailable")}, io.Discard)
+	dbURL := requireDatabaseURLAndReachable(t)
+	assertRunHandlesWriterErrors(t, dbURL, errWriter{err: errors.New("stdout unavailable")}, io.Discard)
 }
 
 func TestRunIgnoresShutdownWriteErrors(t *testing.T) {
-	assertRunHandlesWriterErrors(t, io.Discard, errWriter{err: errors.New("stderr unavailable")})
+	dbURL := requireDatabaseURLAndReachable(t)
+	assertRunHandlesWriterErrors(t, dbURL, io.Discard, errWriter{err: errors.New("stderr unavailable")})
 }
 
 func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
+	dbURL := requireDatabaseURLAndReachable(t)
+
 	publicAddr := reserveTCPAddress(t)
 
 	occupiedInfraListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -41,7 +48,7 @@ func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
 			"API_ADDR":        publicAddr,
 			"API_INFRA_ADDR":  occupiedInfraListener.Addr().String(),
 			"API_ENVIRONMENT": "test",
-			"DB_URL":          testDatabaseURL(t),
+			"DB_URL":          dbURL,
 		}),
 		strings.NewReader(""),
 		io.Discard,
@@ -62,6 +69,8 @@ func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
 }
 
 func TestRunContinuesWithInvalidTracingExporterConfig(t *testing.T) {
+	dbURL := requireDatabaseURLAndReachable(t)
+
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "://invalid-endpoint")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "://invalid-endpoint")
 
@@ -76,7 +85,7 @@ func TestRunContinuesWithInvalidTracingExporterConfig(t *testing.T) {
 		"API_ADDR":                    publicAddr,
 		"API_INFRA_ADDR":              infraAddr,
 		"API_ENVIRONMENT":             "test",
-		"DB_URL":                      testDatabaseURL(t),
+		"DB_URL":                      dbURL,
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "://invalid-endpoint",
 	}
 
@@ -123,7 +132,7 @@ func (w errWriter) Write(p []byte) (int, error) {
 
 const maxRunStartupAttempts = 5
 
-func assertRunHandlesWriterErrors(t *testing.T, stdout, stderr io.Writer) {
+func assertRunHandlesWriterErrors(t *testing.T, dbURL string, stdout, stderr io.Writer) {
 	t.Helper()
 
 	var lastErr error
@@ -136,7 +145,7 @@ func assertRunHandlesWriterErrors(t *testing.T, stdout, stderr io.Writer) {
 			"API_ADDR":        publicAddr,
 			"API_INFRA_ADDR":  infraAddr,
 			"API_ENVIRONMENT": "test",
-			"DB_URL":          testDatabaseURL(t),
+			"DB_URL":          dbURL,
 		}
 
 		runDone := make(chan struct{})
@@ -232,4 +241,28 @@ func waitForRunDone(runDone <-chan struct{}, timeout time.Duration) bool {
 
 func isAddressInUseError(err error) bool {
 	return errors.Is(err, syscall.EADDRINUSE)
+}
+
+func requireDatabaseURLAndReachable(t *testing.T) string {
+	t.Helper()
+
+	dbURL := testDatabaseURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	pool, err := postgres.Open(ctx, config.DBConfig{
+		URL:               dbURL,
+		MinConns:          0,
+		MaxConns:          1,
+		MaxConnLifetime:   time.Minute,
+		MaxConnIdleTime:   30 * time.Second,
+		HealthCheckPeriod: time.Second,
+		ConnectTimeout:    2 * time.Second,
+	})
+	if err != nil {
+		t.Skipf("PostgreSQL integration unavailable: %v", err)
+	}
+	pool.Close()
+
+	return dbURL
 }

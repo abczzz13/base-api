@@ -7,7 +7,7 @@ import (
 	"github.com/ogen-go/ogen/ogenerrors"
 
 	"github.com/abczzz13/base-api/internal/infraoas"
-	"github.com/abczzz13/base-api/internal/oas"
+	"github.com/abczzz13/base-api/internal/publicoas"
 )
 
 const contentTypeJSON = "application/json; charset=utf-8"
@@ -36,10 +36,10 @@ func (e Error) WithRequestID(requestID string) Error {
 }
 
 // OASDefault converts Error into the public API generated default error wrapper.
-func (e Error) OASDefault() *oas.DefaultErrorStatusCode {
+func (e Error) OASDefault() *publicoas.DefaultErrorStatusCode {
 	e = e.normalize()
 
-	return &oas.DefaultErrorStatusCode{
+	return &publicoas.DefaultErrorStatusCode{
 		StatusCode: e.StatusCode,
 		Response:   e.oasResponse(),
 	}
@@ -102,14 +102,14 @@ func (e Error) normalize() Error {
 	return e
 }
 
-func (e Error) oasResponse() oas.ErrorResponse {
-	response := oas.ErrorResponse{
+func (e Error) oasResponse() publicoas.ErrorResponse {
+	response := publicoas.ErrorResponse{
 		Code:    e.Code,
 		Message: e.Message,
 	}
 
 	if e.RequestID != "" {
-		response.RequestId = oas.NewOptString(e.RequestID)
+		response.RequestId = publicoas.NewOptString(e.RequestID)
 	}
 
 	return response

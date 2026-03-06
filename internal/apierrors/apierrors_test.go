@@ -12,7 +12,7 @@ import (
 	"github.com/ogen-go/ogen/ogenerrors"
 
 	"github.com/abczzz13/base-api/internal/infraoas"
-	"github.com/abczzz13/base-api/internal/oas"
+	"github.com/abczzz13/base-api/internal/publicoas"
 )
 
 func TestWriteErrorProducesOASCompatiblePayload(t *testing.T) {
@@ -27,12 +27,12 @@ func TestWriteErrorProducesOASCompatiblePayload(t *testing.T) {
 		t.Fatalf("content type mismatch (-want +got):\n%s", diff)
 	}
 
-	var got oas.ErrorResponse
+	var got publicoas.ErrorResponse
 	if err := got.UnmarshalJSON(rr.Body.Bytes()); err != nil {
-		t.Fatalf("decode body into oas.ErrorResponse: %v", err)
+		t.Fatalf("decode body into publicoas.ErrorResponse: %v", err)
 	}
 
-	want := oas.ErrorResponse{
+	want := publicoas.ErrorResponse{
 		Code:    "forbidden",
 		Message: "cross-origin request denied",
 	}
@@ -47,7 +47,7 @@ func TestWriteMatchesPublicGeneratedErrorEncoding(t *testing.T) {
 	actual := httptest.NewRecorder()
 	apiErr.Write(actual)
 
-	server, err := oas.NewServer(publicErrorHandler{err: apiErr.OASDefault()})
+	server, err := publicoas.NewServer(publicErrorHandler{err: apiErr.OASDefault()})
 	if err != nil {
 		t.Fatalf("create public oas server: %v", err)
 	}
@@ -154,14 +154,14 @@ func TestFromOgenError(t *testing.T) {
 }
 
 type publicErrorHandler struct {
-	err *oas.DefaultErrorStatusCode
+	err *publicoas.DefaultErrorStatusCode
 }
 
-func (h publicErrorHandler) GetHealthz(context.Context) (*oas.HealthResponse, error) {
+func (h publicErrorHandler) GetHealthz(context.Context) (*publicoas.HealthResponse, error) {
 	return nil, h.err
 }
 
-func (h publicErrorHandler) NewError(context.Context, error) *oas.DefaultErrorStatusCode {
+func (h publicErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCode {
 	return h.err
 }
 

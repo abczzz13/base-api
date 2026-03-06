@@ -153,6 +153,10 @@ sqlc-generate:
     "${sqlc_cmd[@]}" generate --file {{sqlc_config}}
 
 [script]
+ogen-generate:
+    go generate {{go_mod_mode}} ./internal/publicoas ./internal/infraoas
+
+[script]
 sqlc-check:
     sqlc_cmd=()
     if [ -x "{{sqlc}}" ]; then sqlc_cmd=("{{sqlc}}"); else sqlc_cmd=(docker run --rm -v "${PWD}:/src" -w /src "{{sqlc_docker_image}}"); fi
@@ -163,6 +167,19 @@ sqlc-check:
 
     if [ "$before" != "$after" ]; then
         printf 'sqlc generated code is out of date. Run: just sqlc-generate\n'
+        printf 'Status before:\n%s\n' "${before:-<clean>}"
+        printf 'Status after:\n%s\n' "${after:-<clean>}"
+        exit 1
+    fi
+
+[script]
+ogen-check:
+    before="$(git status --porcelain -- internal/publicoas internal/infraoas)"
+    go generate {{go_mod_mode}} ./internal/publicoas ./internal/infraoas
+    after="$(git status --porcelain -- internal/publicoas internal/infraoas)"
+
+    if [ "$before" != "$after" ]; then
+        printf 'ogen generated code is out of date. Run: just ogen-generate\n'
         printf 'Status before:\n%s\n' "${before:-<clean>}"
         printf 'Status after:\n%s\n' "${after:-<clean>}"
         exit 1
@@ -319,7 +336,7 @@ coverage:
     packages=()
     while IFS= read -r pkg; do
         case "$pkg" in
-            */internal/oas|*/internal/oas/*|*/internal/infraoas|*/internal/infraoas/*)
+            */internal/publicoas|*/internal/publicoas/*|*/internal/infraoas|*/internal/infraoas/*)
                 continue
                 ;;
         esac
@@ -352,4 +369,4 @@ vendor-check:
 
 tidy-check: vendor-check
 
-check: fmt-go-check lint test sqlc-check vendor-check
+check: fmt-go-check lint test sqlc-check ogen-check vendor-check

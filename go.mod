@@ -3,6 +3,7 @@ module github.com/abczzz13/base-api
 go 1.26.0
 
 require (
+	github.com/abczzz13/clientip v0.0.6
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
 	github.com/google/go-cmp v0.7.0

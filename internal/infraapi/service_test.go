@@ -18,11 +18,11 @@ import (
 func TestInfraServiceGetLivez(t *testing.T) {
 	tests := []struct {
 		name string
-		want *infraoas.ProbeResponse
+		want *infraoas.ProbeResponseHeaders
 	}{
 		{
 			name: "returns alive response",
-			want: &infraoas.ProbeResponse{Status: "OK"},
+			want: &infraoas.ProbeResponseHeaders{Response: infraoas.ProbeResponse{Status: "OK"}},
 		},
 	}
 
@@ -45,14 +45,14 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 		name     string
 		cfg      config.Config
 		checkers []infraapi.ReadinessChecker
-		wantResp *infraoas.ProbeResponse
-		wantErr  *infraoas.DefaultErrorStatusCode
+		wantResp *infraoas.ProbeResponseHeaders
+		wantErr  *infraoas.DefaultErrorStatusCodeWithHeaders
 	}{
 		{
 			name:     "succeeds without readiness checkers",
 			cfg:      config.Config{ReadyzTimeout: time.Second},
 			checkers: nil,
-			wantResp: &infraoas.ProbeResponse{Status: "OK"},
+			wantResp: &infraoas.ProbeResponseHeaders{Response: infraoas.ProbeResponse{Status: "OK"}},
 		},
 		{
 			name: "succeeds when checker passes",
@@ -60,7 +60,7 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 			checkers: []infraapi.ReadinessChecker{
 				infraapi.ReadinessCheckerFunc(func(context.Context) error { return nil }),
 			},
-			wantResp: &infraoas.ProbeResponse{Status: "OK"},
+			wantResp: &infraoas.ProbeResponseHeaders{Response: infraoas.ProbeResponse{Status: "OK"}},
 		},
 		{
 			name: "returns not ready when checker fails",
@@ -68,7 +68,7 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 			checkers: []infraapi.ReadinessChecker{
 				infraapi.ReadinessCheckerFunc(func(context.Context) error { return errors.New("dependency down") }),
 			},
-			wantErr: &infraoas.DefaultErrorStatusCode{
+			wantErr: &infraoas.DefaultErrorStatusCodeWithHeaders{
 				StatusCode: 503,
 				Response: infraoas.ErrorResponse{
 					Code:    "not_ready",
@@ -82,7 +82,7 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 			checkers: []infraapi.ReadinessChecker{
 				nil,
 			},
-			wantErr: &infraoas.DefaultErrorStatusCode{
+			wantErr: &infraoas.DefaultErrorStatusCodeWithHeaders{
 				StatusCode: 503,
 				Response: infraoas.ErrorResponse{
 					Code:    "not_ready",
@@ -108,10 +108,10 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 			}
 
 			if gotResp != nil {
-				t.Fatalf("GetReadyz response mismatch (-want +got):\n%s", cmp.Diff((*infraoas.ProbeResponse)(nil), gotResp))
+				t.Fatalf("GetReadyz response mismatch (-want +got):\n%s", cmp.Diff((*infraoas.ProbeResponseHeaders)(nil), gotResp))
 			}
 
-			var gotErr *infraoas.DefaultErrorStatusCode
+			var gotErr *infraoas.DefaultErrorStatusCodeWithHeaders
 			if !errors.As(err, &gotErr) {
 				t.Fatalf("GetReadyz error type mismatch: got %T (%v)", err, err)
 			}
@@ -185,10 +185,10 @@ func TestInfraServiceGetReadyzUsesSingleTimeoutBudget(t *testing.T) {
 	svc := infraapi.NewService(config.Config{ReadyzTimeout: readyzTimeout}, checker1, checker2)
 	resp, err := svc.GetReadyz(context.Background())
 	if resp != nil {
-		t.Fatalf("GetReadyz response mismatch (-want +got):\n%s", cmp.Diff((*infraoas.ProbeResponse)(nil), resp))
+		t.Fatalf("GetReadyz response mismatch (-want +got):\n%s", cmp.Diff((*infraoas.ProbeResponseHeaders)(nil), resp))
 	}
 
-	var gotErr *infraoas.DefaultErrorStatusCode
+	var gotErr *infraoas.DefaultErrorStatusCodeWithHeaders
 	if !errors.As(err, &gotErr) {
 		t.Fatalf("GetReadyz error type mismatch: got %T (%v)", err, err)
 	}
@@ -284,17 +284,17 @@ func TestInfraServiceGetHealthz(t *testing.T) {
 				t.Fatalf("GetHealthz returned error: %v", err)
 			}
 
-			if diff := cmp.Diff(tt.want.Status, got.Status); diff != "" {
+			if diff := cmp.Diff(tt.want.Status, got.Response.Status); diff != "" {
 				t.Fatalf("GetHealthz status mismatch (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tt.want.Environment, got.Environment); diff != "" {
+			if diff := cmp.Diff(tt.want.Environment, got.Response.Environment); diff != "" {
 				t.Fatalf("GetHealthz environment mismatch (-want +got):\n%s", diff)
 			}
 
-			if got.Version == "" {
+			if got.Response.Version == "" {
 				t.Fatalf("GetHealthz version should not be empty")
 			}
-			if _, err := time.Parse(time.RFC3339, got.Timestamp); err != nil {
+			if _, err := time.Parse(time.RFC3339, got.Response.Timestamp); err != nil {
 				t.Fatalf("GetHealthz timestamp is not RFC3339: %v", err)
 			}
 		})

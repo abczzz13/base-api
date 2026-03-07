@@ -14,7 +14,7 @@ When configured, the API runs pending `goose` migrations on startup unless
 When set, `DB_CONNECT_TIMEOUT` overrides any `connect_timeout` value embedded
 in `DB_URL`. Set `DB_CONNECT_TIMEOUT=0s` to keep `connect_timeout` from
 `DB_URL`.
-Current migrations create `http_request_audit` and `http_client_audit`.
+Current migrations create `http_request_audit` and `http_client_audit`, including request ID fields for log and error correlation.
 
 `sqlc.yaml` uses Goose migrations in `db/migrations` together with queries in
 `db/queries`. Migrations are the schema source of truth. Regenerate code with

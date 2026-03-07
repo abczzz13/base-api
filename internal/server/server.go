@@ -23,15 +23,9 @@ import (
 
 func Run(
 	ctx context.Context,
-	args []string,
 	lookupEnv func(string) (string, bool),
-	stdin io.Reader,
-	stdout, stderr io.Writer,
+	stderr io.Writer,
 ) error {
-	_ = args
-	_ = stdin
-	_ = stdout
-
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

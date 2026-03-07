@@ -9,10 +9,10 @@ import (
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
 	BaseHandler
-	// NewError creates *DefaultErrorStatusCode from error returned by handler.
+	// NewError creates *DefaultErrorStatusCodeWithHeaders from error returned by handler.
 	//
 	// Used for common default response.
-	NewError(ctx context.Context, err error) *DefaultErrorStatusCode
+	NewError(ctx context.Context, err error) *DefaultErrorStatusCodeWithHeaders
 }
 
 // BaseHandler handles operations described by OpenAPI v3 specification.
@@ -24,7 +24,7 @@ type BaseHandler interface {
 	// Public health endpoint.
 	//
 	// GET /healthz
-	GetHealthz(ctx context.Context) (*HealthResponse, error)
+	GetHealthz(ctx context.Context) (*HealthResponseHeaders, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

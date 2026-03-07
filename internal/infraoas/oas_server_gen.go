@@ -9,10 +9,10 @@ import (
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
 	InfraHandler
-	// NewError creates *DefaultErrorStatusCode from error returned by handler.
+	// NewError creates *DefaultErrorStatusCodeWithHeaders from error returned by handler.
 	//
 	// Used for common default response.
-	NewError(ctx context.Context, err error) *DefaultErrorStatusCode
+	NewError(ctx context.Context, err error) *DefaultErrorStatusCodeWithHeaders
 }
 
 // InfraHandler handles operations described by OpenAPI v3 specification.
@@ -24,19 +24,19 @@ type InfraHandler interface {
 	// Service health summary endpoint.
 	//
 	// GET /healthz
-	GetHealthz(ctx context.Context) (*HealthResponse, error)
+	GetHealthz(ctx context.Context) (*HealthResponseHeaders, error)
 	// GetLivez implements getLivez operation.
 	//
 	// Liveness probe endpoint.
 	//
 	// GET /livez
-	GetLivez(ctx context.Context) (*ProbeResponse, error)
+	GetLivez(ctx context.Context) (*ProbeResponseHeaders, error)
 	// GetReadyz implements getReadyz operation.
 	//
 	// Readiness probe endpoint.
 	//
 	// GET /readyz
-	GetReadyz(ctx context.Context) (*ProbeResponse, error)
+	GetReadyz(ctx context.Context) (*ProbeResponseHeaders, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

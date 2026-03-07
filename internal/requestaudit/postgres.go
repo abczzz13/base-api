@@ -70,6 +70,7 @@ func (repo *postgresRepository) StoreRequestAudit(ctx context.Context, record Re
 		ResponseBody:          jsonColumn(record.ResponseBody),
 		RequestBodyTruncated:  record.RequestBodyTruncated,
 		ResponseBodyTruncated: record.ResponseBodyTruncated,
+		RequestID:             record.RequestID,
 		TraceID:               record.TraceID,
 		SpanID:                record.SpanID,
 	})

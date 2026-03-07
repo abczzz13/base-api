@@ -17,12 +17,12 @@ func TestBaseServiceGetHealthz(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  config.Config
-		want *publicoas.HealthResponse
+		want *publicoas.HealthResponseHeaders
 	}{
 		{
 			name: "returns public safe health response",
 			cfg:  config.Config{Environment: "production"},
-			want: &publicoas.HealthResponse{Status: "OK"},
+			want: &publicoas.HealthResponseHeaders{Response: publicoas.HealthResponse{Status: "OK"}},
 		},
 	}
 
@@ -45,12 +45,12 @@ func TestBaseServiceNewError(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
-		want *publicoas.DefaultErrorStatusCode
+		want *publicoas.DefaultErrorStatusCodeWithHeaders
 	}{
 		{
 			name: "maps unexpected error to internal response",
 			err:  errors.New("boom"),
-			want: &publicoas.DefaultErrorStatusCode{
+			want: &publicoas.DefaultErrorStatusCodeWithHeaders{
 				StatusCode: 500,
 				Response: publicoas.ErrorResponse{
 					Code:    "internal_error",

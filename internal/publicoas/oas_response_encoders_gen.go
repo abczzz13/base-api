@@ -7,15 +7,36 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
+	"github.com/ogen-go/ogen/conv"
 	ht "github.com/ogen-go/ogen/http"
+	"github.com/ogen-go/ogen/uri"
 )
 
-func encodeGetHealthzResponse(response *HealthResponse, w http.ResponseWriter) error {
+func encodeGetHealthzResponse(response *HealthResponseHeaders, w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// Encoding response headers.
+	{
+		h := uri.NewHeaderEncoder(w.Header())
+		// Encode "X-Request-Id" header.
+		{
+			cfg := uri.HeaderParameterEncodingConfig{
+				Name:    "X-Request-Id",
+				Explode: false,
+			}
+			if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+				if val, ok := response.XRequestID.Get(); ok {
+					return e.EncodeValue(conv.StringToString(val))
+				}
+				return nil
+			}); err != nil {
+				return errors.Wrap(err, "encode X-Request-Id header")
+			}
+		}
+	}
 	w.WriteHeader(200)
 
 	e := new(jx.Encoder)
-	response.Encode(e)
+	response.Response.Encode(e)
 	if _, err := e.WriteTo(w); err != nil {
 		return errors.Wrap(err, "write")
 	}
@@ -23,8 +44,27 @@ func encodeGetHealthzResponse(response *HealthResponse, w http.ResponseWriter) e
 	return nil
 }
 
-func encodeErrorResponse(response *DefaultErrorStatusCode, w http.ResponseWriter) error {
+func encodeErrorResponse(response *DefaultErrorStatusCodeWithHeaders, w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// Encoding response headers.
+	{
+		h := uri.NewHeaderEncoder(w.Header())
+		// Encode "X-Request-Id" header.
+		{
+			cfg := uri.HeaderParameterEncodingConfig{
+				Name:    "X-Request-Id",
+				Explode: false,
+			}
+			if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+				if val, ok := response.XRequestID.Get(); ok {
+					return e.EncodeValue(conv.StringToString(val))
+				}
+				return nil
+			}); err != nil {
+				return errors.Wrap(err, "encode X-Request-Id header")
+			}
+		}
+	}
 	code := response.StatusCode
 	if code == 0 {
 		// Set default status code.

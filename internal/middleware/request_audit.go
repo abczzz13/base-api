@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/abczzz13/base-api/internal/requestaudit"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 const (
@@ -171,6 +172,7 @@ func requestAuditRecordFromRequest(r *http.Request, inputs requestAuditRecordInp
 		ResponseBody:          requestAuditRedactBody(requestAuditBodyBytes(inputs.responseBodyCapture), requestAuditBodyTruncated(inputs.responseBodyCapture)),
 		RequestBodyTruncated:  requestAuditBodyTruncated(inputs.requestBodyCapture),
 		ResponseBodyTruncated: requestAuditBodyTruncated(inputs.responseBodyCapture),
+		RequestID:             requestid.FromContext(requestContextOrBackground(r)),
 	}
 
 	if spanContext := trace.SpanContextFromContext(requestContextOrBackground(r)); spanContext.IsValid() {

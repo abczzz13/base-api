@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS http_client_audit (
     response_body_truncated BOOLEAN NOT NULL DEFAULT FALSE,
     error_kind TEXT NOT NULL DEFAULT '',
     error_message TEXT NOT NULL DEFAULT '',
+    request_id TEXT NOT NULL DEFAULT '',
     trace_id TEXT NOT NULL DEFAULT '',
     span_id TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS http_client_audit (
 
 CREATE INDEX IF NOT EXISTS idx_http_client_audit_created_at ON http_client_audit (created_at);
 CREATE INDEX IF NOT EXISTS idx_http_client_audit_client_created_at ON http_client_audit (client, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_http_client_audit_request_id ON http_client_audit (request_id) WHERE request_id <> '';
 CREATE INDEX IF NOT EXISTS idx_http_client_audit_trace_id ON http_client_audit (trace_id) WHERE trace_id <> '';
 -- +goose StatementEnd
 

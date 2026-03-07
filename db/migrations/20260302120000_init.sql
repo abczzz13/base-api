@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS http_request_audit (
     response_body JSONB,
     request_body_truncated BOOLEAN NOT NULL DEFAULT FALSE,
     response_body_truncated BOOLEAN NOT NULL DEFAULT FALSE,
+    request_id TEXT NOT NULL DEFAULT '',
     trace_id TEXT NOT NULL DEFAULT '',
     span_id TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS http_request_audit (
 );
 
 CREATE INDEX IF NOT EXISTS idx_http_request_audit_created_at ON http_request_audit (created_at);
+CREATE INDEX IF NOT EXISTS idx_http_request_audit_request_id ON http_request_audit (request_id) WHERE request_id <> '';
 -- +goose StatementEnd
 
 -- +goose Down

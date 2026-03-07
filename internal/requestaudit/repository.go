@@ -52,6 +52,7 @@ type Record struct {
 	ResponseBody          []byte
 	RequestBodyTruncated  bool
 	ResponseBodyTruncated bool
+	RequestID             string
 	TraceID               string
 	SpanID                string
 }

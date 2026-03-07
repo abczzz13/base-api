@@ -30,6 +30,7 @@ INSERT INTO http_client_audit (
     response_body_truncated,
     error_kind,
     error_message,
+    request_id,
     trace_id,
     span_id
 ) VALUES (
@@ -53,7 +54,8 @@ INSERT INTO http_client_audit (
     $18,
     $19,
     $20,
-    $21
+    $21,
+    $22
 )
 `
 
@@ -77,6 +79,7 @@ type InsertHTTPClientAuditParams struct {
 	ResponseBodyTruncated bool   `json:"response_body_truncated"`
 	ErrorKind             string `json:"error_kind"`
 	ErrorMessage          string `json:"error_message"`
+	RequestID             string `json:"request_id"`
 	TraceID               string `json:"trace_id"`
 	SpanID                string `json:"span_id"`
 }
@@ -102,6 +105,7 @@ func (q *Queries) InsertHTTPClientAudit(ctx context.Context, arg InsertHTTPClien
 		arg.ResponseBodyTruncated,
 		arg.ErrorKind,
 		arg.ErrorMessage,
+		arg.RequestID,
 		arg.TraceID,
 		arg.SpanID,
 	)

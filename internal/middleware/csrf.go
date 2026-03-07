@@ -35,7 +35,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 				"sec_fetch_site", secFetchSite,
 			)
 
-			apierrors.WriteError(w, "forbidden", "cross-origin request denied", http.StatusForbidden)
+			apierrors.WriteError(ctx, w, "forbidden", "cross-origin request denied", http.StatusForbidden)
 		}))
 
 		return cop.Handler(next)

@@ -16,12 +16,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/abczzz13/base-api/internal/requestaudit"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 	store := &recordingRequestAuditStore{}
 
-	handler := RequestAudit(RequestAuditConfig{
+	handler := RequestID()(RequestAudit(RequestAuditConfig{
 		Store:      store,
 		Server:     "public",
 		RouteLabel: func(*http.Request) string { return "createWidget" },
@@ -31,10 +32,9 @@ func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 		}
 
 		w.Header().Set("Set-Cookie", "session=xyz")
-		w.Header().Set("X-Request-Id", "req-123")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"ok":true,"refresh_token":"response-token","nested":{"client_secret":"shh","visible":"yes"}}`))
-	}))
+	})))
 
 	req := httptest.NewRequest(http.MethodPost, "https://api.example.test/widgets?region=eu", strings.NewReader(`{"username":"alice","password":"top-secret","profile":{"email":"alice@example.com"},"tokens":{"access_token":"abc","keep":"value"},"array":[{"client_secret":"x","name":"first"}]}`))
 	req.RemoteAddr = "10.20.30.40:43123"
@@ -43,6 +43,7 @@ func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 	req.Header.Set("X-API-Key", "api-key-value")
 	req.Header.Set("X-Forwarded-For", "93.184.216.34, 10.20.30.40")
 	req.Header.Set("User-Agent", "request-audit-test")
+	req.Header.Set(requestid.HeaderName, "req-123")
 
 	traceID, err := trace.TraceIDFromHex("0123456789abcdef0123456789abcdef")
 	if err != nil {
@@ -105,6 +106,9 @@ func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 	if record.SpanID != spanID.String() {
 		t.Fatalf("span id mismatch: want %q, got %q", spanID.String(), record.SpanID)
 	}
+	if record.RequestID != "req-123" {
+		t.Fatalf("request id mismatch: want %q, got %q", "req-123", record.RequestID)
+	}
 	if record.RequestSizeBytes != req.ContentLength {
 		t.Fatalf("request size mismatch: want %d, got %d", req.ContentLength, record.RequestSizeBytes)
 	}
@@ -129,7 +133,7 @@ func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 	if diff := cmp.Diff([]string{requestAuditRedactedValue}, record.ResponseHeaders["Set-Cookie"]); diff != "" {
 		t.Fatalf("response header %q mismatch (-want +got):\n%s", "Set-Cookie", diff)
 	}
-	if diff := cmp.Diff([]string{"req-123"}, record.ResponseHeaders["X-Request-Id"]); diff != "" {
+	if diff := cmp.Diff([]string{"req-123"}, record.ResponseHeaders[requestid.HeaderName]); diff != "" {
 		t.Fatalf("response header %q mismatch (-want +got):\n%s", "X-Request-Id", diff)
 	}
 

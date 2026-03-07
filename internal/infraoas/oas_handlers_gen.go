@@ -43,7 +43,7 @@ func (s *Server) handleGetHealthzRequest(args [0]string, argsEscaped bool, w htt
 
 	var rawBody []byte
 
-	var response *HealthResponse
+	var response *HealthResponseHeaders
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -59,7 +59,7 @@ func (s *Server) handleGetHealthzRequest(args [0]string, argsEscaped bool, w htt
 		type (
 			Request  = struct{}
 			Params   = struct{}
-			Response = *HealthResponse
+			Response = *HealthResponseHeaders
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -78,7 +78,7 @@ func (s *Server) handleGetHealthzRequest(args [0]string, argsEscaped bool, w htt
 		response, err = s.h.GetHealthz(ctx)
 	}
 	if err != nil {
-		if errRes, ok := errors.Into[*DefaultErrorStatusCode](err); ok {
+		if errRes, ok := errors.Into[*DefaultErrorStatusCodeWithHeaders](err); ok {
 			if err := encodeErrorResponse(errRes, w); err != nil {
 				defer recordError("Internal", err)
 			}
@@ -119,7 +119,7 @@ func (s *Server) handleGetLivezRequest(args [0]string, argsEscaped bool, w http.
 
 	var rawBody []byte
 
-	var response *ProbeResponse
+	var response *ProbeResponseHeaders
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -135,7 +135,7 @@ func (s *Server) handleGetLivezRequest(args [0]string, argsEscaped bool, w http.
 		type (
 			Request  = struct{}
 			Params   = struct{}
-			Response = *ProbeResponse
+			Response = *ProbeResponseHeaders
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -154,7 +154,7 @@ func (s *Server) handleGetLivezRequest(args [0]string, argsEscaped bool, w http.
 		response, err = s.h.GetLivez(ctx)
 	}
 	if err != nil {
-		if errRes, ok := errors.Into[*DefaultErrorStatusCode](err); ok {
+		if errRes, ok := errors.Into[*DefaultErrorStatusCodeWithHeaders](err); ok {
 			if err := encodeErrorResponse(errRes, w); err != nil {
 				defer recordError("Internal", err)
 			}
@@ -195,7 +195,7 @@ func (s *Server) handleGetReadyzRequest(args [0]string, argsEscaped bool, w http
 
 	var rawBody []byte
 
-	var response *ProbeResponse
+	var response *ProbeResponseHeaders
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -211,7 +211,7 @@ func (s *Server) handleGetReadyzRequest(args [0]string, argsEscaped bool, w http
 		type (
 			Request  = struct{}
 			Params   = struct{}
-			Response = *ProbeResponse
+			Response = *ProbeResponseHeaders
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -230,7 +230,7 @@ func (s *Server) handleGetReadyzRequest(args [0]string, argsEscaped bool, w http
 		response, err = s.h.GetReadyz(ctx)
 	}
 	if err != nil {
-		if errRes, ok := errors.Into[*DefaultErrorStatusCode](err); ok {
+		if errRes, ok := errors.Into[*DefaultErrorStatusCodeWithHeaders](err); ok {
 			if err := encodeErrorResponse(errRes, w); err != nil {
 				defer recordError("Internal", err)
 			}

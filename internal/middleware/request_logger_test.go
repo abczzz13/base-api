@@ -12,6 +12,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 func TestRequestLogger(t *testing.T) {
@@ -194,12 +197,40 @@ func TestRequestLoggerLogsRecoveredPanics(t *testing.T) {
 	}
 }
 
+func TestRequestLoggerIncludesRequestIDInLogs(t *testing.T) {
+	var logs bytes.Buffer
+	setDefaultLoggerForRequestLoggerTest(t, &logs)
+
+	handler := RequestID()(RequestLogger()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/request-id", nil)
+	req.Header.Set(requestid.HeaderName, "req-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	entries := decodeJSONLines(t, logs.String())
+	if len(entries) < 2 {
+		t.Fatalf("expected request logs, got %#v", entries)
+	}
+
+	for _, entry := range entries {
+		requestID, ok := entry["request_id"].(string)
+		if !ok {
+			t.Fatalf("expected string request_id field, got %#v", entry["request_id"])
+		}
+		if requestID != "req-123" {
+			t.Fatalf("request_id mismatch: want %q, got %q", "req-123", requestID)
+		}
+	}
+}
+
 func setDefaultLoggerForRequestLoggerTest(t *testing.T, writer io.Writer) {
 	t.Helper()
 
 	previous := slog.Default()
-	logger := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	slog.SetDefault(logger)
+	logger.New(logger.Config{Format: logger.FormatJSON, Level: slog.LevelDebug, Writer: writer})
 
 	t.Cleanup(func() {
 		slog.SetDefault(previous)

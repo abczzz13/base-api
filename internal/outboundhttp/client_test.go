@@ -18,6 +18,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/abczzz13/base-api/internal/outboundaudit"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 func TestServiceDoRecordsMetricsAndAudit(t *testing.T) {
@@ -67,6 +68,7 @@ func TestServiceDoRecordsMetricsAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewJSONRequest returned error: %v", err)
 	}
+	req = req.WithContext(requestid.WithContext(req.Context(), "req-123"))
 	req.Header.Set("Authorization", "Bearer secret")
 
 	resp, err := service.Do(req)
@@ -130,6 +132,9 @@ func TestServiceDoRecordsMetricsAndAudit(t *testing.T) {
 	}
 	if record.SpanID == "" {
 		t.Fatal("expected span id to be recorded")
+	}
+	if diff := cmp.Diff("req-123", record.RequestID); diff != "" {
+		t.Fatalf("request ID mismatch (-want +got):\n%s", diff)
 	}
 }
 

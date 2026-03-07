@@ -215,7 +215,10 @@ func TestNewInfraHandlerRecoversPanicsFromMetricsGatherer(t *testing.T) {
 	if got := rr.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 		t.Fatalf("content-type mismatch: want %q, got %q", "application/json; charset=utf-8", got)
 	}
-	if got := rr.Body.String(); got != `{"code":"internal_error","message":"internal server error"}` {
+	if got := rr.Header().Get("X-Request-Id"); got == "" {
+		t.Fatal("expected non-empty X-Request-Id response header")
+	}
+	if got := rr.Body.String(); !strings.Contains(got, `"code":"internal_error"`) || !strings.Contains(got, `"message":"internal server error"`) || !strings.Contains(got, `"requestId":"`) {
 		t.Fatalf("body mismatch: got %q", got)
 	}
 }

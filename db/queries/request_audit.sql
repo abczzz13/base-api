@@ -21,6 +21,7 @@ INSERT INTO http_request_audit (
     response_body,
     request_body_truncated,
     response_body_truncated,
+    request_id,
     trace_id,
     span_id
 ) VALUES (
@@ -46,5 +47,6 @@ INSERT INTO http_request_audit (
     $20,
     $21,
     $22,
-    $23
+    $23,
+    $24
 );

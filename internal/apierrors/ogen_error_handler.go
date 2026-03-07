@@ -8,11 +8,13 @@ import (
 
 // OgenErrorHandler maps ogen framework errors to API errors and logs 5xx responses.
 func OgenErrorHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) {
-	if ctx == nil {
+	if r != nil && r.Context() != nil {
+		ctx = r.Context()
+	} else if ctx == nil {
 		ctx = context.Background()
 	}
 
-	apiErr := FromOgenError(err)
+	apiErr := FromOgenError(err).WithContext(ctx)
 	if apiErr.StatusCode >= http.StatusInternalServerError {
 		attrs := []slog.Attr{slog.Int("status", apiErr.StatusCode)}
 		if r != nil {

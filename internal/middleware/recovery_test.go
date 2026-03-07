@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 func TestRecovery(t *testing.T) {
@@ -65,6 +67,26 @@ func TestRecovery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRecoveryIncludesRequestIDInErrorResponse(t *testing.T) {
+	handler := RequestID()(Recovery()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	req.Header.Set(requestid.HeaderName, "req-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+
+	wantBody := `{"code":"internal_error","message":"internal server error","requestId":"req-123"}`
+	if rec.Body.String() != wantBody {
+		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
 	}
 }
 

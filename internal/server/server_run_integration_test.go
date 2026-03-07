@@ -17,14 +17,9 @@ import (
 	"github.com/abczzz13/base-api/internal/postgres"
 )
 
-func TestRunIgnoresStartupWriteErrors(t *testing.T) {
+func TestRunIgnoresLogWriteErrors(t *testing.T) {
 	dbURL := requireDatabaseURLAndReachable(t)
-	assertRunHandlesWriterErrors(t, dbURL, errWriter{err: errors.New("stdout unavailable")}, io.Discard)
-}
-
-func TestRunIgnoresShutdownWriteErrors(t *testing.T) {
-	dbURL := requireDatabaseURLAndReachable(t)
-	assertRunHandlesWriterErrors(t, dbURL, io.Discard, errWriter{err: errors.New("stderr unavailable")})
+	assertRunHandlesWriterErrors(t, dbURL, errWriter{err: errors.New("stderr unavailable")})
 }
 
 func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
@@ -43,15 +38,12 @@ func TestRunClosesBoundListenersWhenLaterListenFails(t *testing.T) {
 
 	err = Run(
 		ctx,
-		nil,
 		lookupEnvFromMap(map[string]string{
 			"API_ADDR":        publicAddr,
 			"API_INFRA_ADDR":  occupiedInfraListener.Addr().String(),
 			"API_ENVIRONMENT": "test",
 			"DB_URL":          dbURL,
 		}),
-		strings.NewReader(""),
-		io.Discard,
 		io.Discard,
 	)
 	if err == nil {
@@ -92,7 +84,7 @@ func TestRunContinuesWithInvalidTracingExporterConfig(t *testing.T) {
 	runDone := make(chan struct{})
 	var runErr error
 	go func() {
-		runErr = Run(ctx, nil, lookupEnvFromMap(env), strings.NewReader(""), io.Discard, &stderr)
+		runErr = Run(ctx, lookupEnvFromMap(env), &stderr)
 		close(runDone)
 	}()
 
@@ -132,7 +124,7 @@ func (w errWriter) Write(p []byte) (int, error) {
 
 const maxRunStartupAttempts = 5
 
-func assertRunHandlesWriterErrors(t *testing.T, dbURL string, stdout, stderr io.Writer) {
+func assertRunHandlesWriterErrors(t *testing.T, dbURL string, stderr io.Writer) {
 	t.Helper()
 
 	var lastErr error
@@ -151,7 +143,7 @@ func assertRunHandlesWriterErrors(t *testing.T, dbURL string, stdout, stderr io.
 		runDone := make(chan struct{})
 		var runErr error
 		go func() {
-			runErr = Run(ctx, nil, lookupEnvFromMap(env), strings.NewReader(""), stdout, stderr)
+			runErr = Run(ctx, lookupEnvFromMap(env), stderr)
 			close(runDone)
 		}()
 

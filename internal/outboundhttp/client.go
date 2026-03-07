@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/abczzz13/base-api/internal/outboundaudit"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 const (
@@ -395,6 +396,7 @@ func (t *instrumentedTransport) finalize(
 		ResponseBodyTruncated: captureTruncated(responseContentLength(resp), responseCapture),
 		ErrorKind:             errorKind(err),
 		ErrorMessage:          errorMessage(err),
+		RequestID:             requestid.FromContext(contextOrBackground(req.Context())),
 	}
 
 	if spanContext := trace.SpanContextFromContext(contextOrBackground(req.Context())); spanContext.IsValid() {

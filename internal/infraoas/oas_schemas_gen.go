@@ -6,33 +6,44 @@ import (
 	"fmt"
 )
 
-func (s *DefaultErrorStatusCode) Error() string {
+func (s *DefaultErrorStatusCodeWithHeaders) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
-// DefaultErrorStatusCode wraps ErrorResponse with StatusCode.
-type DefaultErrorStatusCode struct {
+// DefaultErrorStatusCodeWithHeaders wraps ErrorResponse with status code and response headers.
+type DefaultErrorStatusCodeWithHeaders struct {
 	StatusCode int
+	XRequestID OptString
 	Response   ErrorResponse
 }
 
 // GetStatusCode returns the value of StatusCode.
-func (s *DefaultErrorStatusCode) GetStatusCode() int {
+func (s *DefaultErrorStatusCodeWithHeaders) GetStatusCode() int {
 	return s.StatusCode
 }
 
+// GetXRequestID returns the value of XRequestID.
+func (s *DefaultErrorStatusCodeWithHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
 // GetResponse returns the value of Response.
-func (s *DefaultErrorStatusCode) GetResponse() ErrorResponse {
+func (s *DefaultErrorStatusCodeWithHeaders) GetResponse() ErrorResponse {
 	return s.Response
 }
 
 // SetStatusCode sets the value of StatusCode.
-func (s *DefaultErrorStatusCode) SetStatusCode(val int) {
+func (s *DefaultErrorStatusCodeWithHeaders) SetStatusCode(val int) {
 	s.StatusCode = val
 }
 
+// SetXRequestID sets the value of XRequestID.
+func (s *DefaultErrorStatusCodeWithHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
 // SetResponse sets the value of Response.
-func (s *DefaultErrorStatusCode) SetResponse(val ErrorResponse) {
+func (s *DefaultErrorStatusCodeWithHeaders) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
@@ -121,6 +132,32 @@ func (s *HealthResponse) SetEnvironment(val string) {
 	s.Environment = val
 }
 
+// HealthResponseHeaders wraps HealthResponse with response headers.
+type HealthResponseHeaders struct {
+	XRequestID OptString
+	Response   HealthResponse
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *HealthResponseHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *HealthResponseHeaders) GetResponse() HealthResponse {
+	return s.Response
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *HealthResponseHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *HealthResponseHeaders) SetResponse(val HealthResponse) {
+	s.Response = val
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -180,4 +217,30 @@ func (s *ProbeResponse) GetStatus() string {
 // SetStatus sets the value of Status.
 func (s *ProbeResponse) SetStatus(val string) {
 	s.Status = val
+}
+
+// ProbeResponseHeaders wraps ProbeResponse with response headers.
+type ProbeResponseHeaders struct {
+	XRequestID OptString
+	Response   ProbeResponse
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *ProbeResponseHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *ProbeResponseHeaders) GetResponse() ProbeResponse {
+	return s.Response
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *ProbeResponseHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ProbeResponseHeaders) SetResponse(val ProbeResponse) {
+	s.Response = val
 }

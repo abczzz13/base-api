@@ -9,7 +9,27 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/abczzz13/base-api/internal/requestid"
 )
+
+func TestNewAddsRequestIDWhenContextContainsRequestID(t *testing.T) {
+	previous := slog.Default()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+	})
+
+	var logs bytes.Buffer
+	New(Config{Format: FormatJSON, Writer: &logs})
+
+	ctx := requestid.WithContext(context.Background(), "req-123")
+	slog.InfoContext(ctx, "request test")
+
+	entry := decodeSingleJSONEntry(t, logs.String())
+	if got := entry["request_id"]; got != "req-123" {
+		t.Fatalf("request_id mismatch: want %q, got %#v", "req-123", got)
+	}
+}
 
 func TestNewAddsTraceAndSpanIDsWhenContextContainsSpan(t *testing.T) {
 	previous := slog.Default()
@@ -64,6 +84,9 @@ func TestNewOmitsTraceAndSpanIDsWithoutSpanContext(t *testing.T) {
 	}
 	if _, ok := entry["span_id"]; ok {
 		t.Fatalf("span_id should be omitted when span context is missing")
+	}
+	if _, ok := entry["request_id"]; ok {
+		t.Fatalf("request_id should be omitted when request context is missing")
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	if err := server.Run(ctx, os.Args, os.LookupEnv, os.Stdin, os.Stdout, os.Stderr); err != nil {
+	if err := server.Run(ctx, os.LookupEnv, os.Stderr); err != nil {
 		slog.Error("api exited with error", slog.Any("error", err))
 		os.Exit(1)
 	}

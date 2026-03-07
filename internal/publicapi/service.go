@@ -7,6 +7,7 @@ import (
 	"github.com/abczzz13/base-api/internal/apierrors"
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 var _ publicoas.Handler = (*Service)(nil)
@@ -21,17 +22,21 @@ func NewService(cfg config.Config) *Service {
 	return &Service{cfg: cfg}
 }
 
-func (s *Service) GetHealthz(ctx context.Context) (*publicoas.HealthResponse, error) {
-	_ = ctx
+func (s *Service) GetHealthz(ctx context.Context) (*publicoas.HealthResponseHeaders, error) {
+	response := &publicoas.HealthResponseHeaders{
+		Response: publicoas.HealthResponse{
+			Status: "OK",
+		},
+	}
+	if requestID := requestid.FromContext(ctx); requestID != "" {
+		response.XRequestID = publicoas.NewOptString(requestID)
+	}
 
-	return &publicoas.HealthResponse{
-		Status: "OK",
-	}, nil
+	return response, nil
 }
 
-func (s *Service) NewError(ctx context.Context, err error) *publicoas.DefaultErrorStatusCode {
-	_ = ctx
+func (s *Service) NewError(ctx context.Context, err error) *publicoas.DefaultErrorStatusCodeWithHeaders {
 	_ = err
 
-	return apierrors.New(http.StatusInternalServerError, "internal_error", "internal server error").OASDefault()
+	return apierrors.New(http.StatusInternalServerError, "internal_error", "internal server error").WithContext(ctx).OASDefault()
 }

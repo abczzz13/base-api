@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -85,7 +86,10 @@ func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
 		if got := rr.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 			t.Fatalf("content-type mismatch: want %q, got %q", "application/json; charset=utf-8", got)
 		}
-		if got := rr.Body.String(); got != `{"code":"forbidden","message":"cross-origin request denied"}` {
+		if got := rr.Header().Get("X-Request-Id"); got == "" {
+			t.Fatal("expected non-empty X-Request-Id response header")
+		}
+		if got := rr.Body.String(); !strings.Contains(got, `"code":"forbidden"`) || !strings.Contains(got, `"message":"cross-origin request denied"`) || !strings.Contains(got, `"requestId":"`) {
 			t.Fatalf("body mismatch: got %q", got)
 		}
 	})

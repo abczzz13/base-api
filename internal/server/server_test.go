@@ -24,14 +24,11 @@ func TestRunReturnsErrorWhenConfigValidationFails(t *testing.T) {
 
 	err := Run(
 		ctx,
-		nil,
 		lookupEnvFromMap(map[string]string{
 			"API_ADDR":        "invalid-address",
 			"API_INFRA_ADDR":  reserveTCPAddress(t),
 			"API_ENVIRONMENT": "test",
 		}),
-		strings.NewReader(""),
-		io.Discard,
 		io.Discard,
 	)
 	if err == nil {
@@ -51,15 +48,12 @@ func TestRunReturnsErrorWhenDatabaseConfigurationFails(t *testing.T) {
 
 	err := Run(
 		ctx,
-		nil,
 		lookupEnvFromMap(map[string]string{
 			"API_ADDR":        reserveTCPAddress(t),
 			"API_INFRA_ADDR":  reserveTCPAddress(t),
 			"API_ENVIRONMENT": "test",
 			"DB_URL":          "postgres://:bad",
 		}),
-		strings.NewReader(""),
-		io.Discard,
 		io.Discard,
 	)
 	if err == nil {
@@ -76,14 +70,11 @@ func TestRunReturnsErrorWhenDatabaseURLIsMissing(t *testing.T) {
 
 	err := Run(
 		ctx,
-		nil,
 		lookupEnvFromMap(map[string]string{
 			"API_ADDR":        reserveTCPAddress(t),
 			"API_INFRA_ADDR":  reserveTCPAddress(t),
 			"API_ENVIRONMENT": "test",
 		}),
-		strings.NewReader(""),
-		io.Discard,
 		io.Discard,
 	)
 	if err == nil {

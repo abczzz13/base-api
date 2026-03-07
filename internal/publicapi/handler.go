@@ -39,6 +39,7 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 
 	middlewares := make([]func(http.Handler) http.Handler, 0, 7)
 	middlewares = append(middlewares,
+		middleware.RequestID(),
 		middleware.RequestMetrics(deps.RequestMetrics, middleware.RequestMetricsConfig{
 			Server:     "public",
 			RouteLabel: routeLabel,

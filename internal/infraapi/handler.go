@@ -42,6 +42,7 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 	appMux.Handle("/", infraAPI)
 
 	middlewares := []func(http.Handler) http.Handler{
+		middleware.RequestID(),
 		middleware.RequestMetrics(deps.RequestMetrics, middleware.RequestMetricsConfig{
 			Server:     "infra",
 			RouteLabel: requestMetricsRouteLabeler(infraAPI),
@@ -52,7 +53,8 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 	}
 	middlewares = append(middlewares, middleware.Recovery())
 
-	metricsMiddlewares := make([]func(http.Handler) http.Handler, 0, 2)
+	metricsMiddlewares := make([]func(http.Handler) http.Handler, 0, 3)
+	metricsMiddlewares = append(metricsMiddlewares, middleware.RequestID())
 	if cfg.RequestLogger.IsEnabled() {
 		metricsMiddlewares = append(metricsMiddlewares, middleware.RequestLogger())
 	}

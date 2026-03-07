@@ -31,6 +31,7 @@ type HttpClientAudit struct {
 	ResponseBodyTruncated bool               `json:"response_body_truncated"`
 	ErrorKind             string             `json:"error_kind"`
 	ErrorMessage          string             `json:"error_message"`
+	RequestID             string             `json:"request_id"`
 	TraceID               string             `json:"trace_id"`
 	SpanID                string             `json:"span_id"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
@@ -59,6 +60,7 @@ type HttpRequestAudit struct {
 	ResponseBody          []byte             `json:"response_body"`
 	RequestBodyTruncated  bool               `json:"request_body_truncated"`
 	ResponseBodyTruncated bool               `json:"response_body_truncated"`
+	RequestID             string             `json:"request_id"`
 	TraceID               string             `json:"trace_id"`
 	SpanID                string             `json:"span_id"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`

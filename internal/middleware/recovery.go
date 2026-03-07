@@ -28,7 +28,7 @@ func Recovery() func(http.Handler) http.Handler {
 						slog.String("path", r.URL.Path),
 					).ErrorContext(ctx, "panic recovered")
 
-					apierrors.WriteError(w, "internal_error", "internal server error", http.StatusInternalServerError)
+					apierrors.WriteError(ctx, w, "internal_error", "internal server error", http.StatusInternalServerError)
 				}
 			}()
 

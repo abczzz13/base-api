@@ -2,12 +2,14 @@
 package apierrors
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/ogen-go/ogen/ogenerrors"
 
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 const contentTypeJSON = "application/json; charset=utf-8"
@@ -35,24 +37,43 @@ func (e Error) WithRequestID(requestID string) Error {
 	return e
 }
 
+// WithContext returns a copy with request metadata populated from ctx.
+func (e Error) WithContext(ctx context.Context) Error {
+	if e.RequestID == "" {
+		e.RequestID = requestid.FromContext(ctx)
+	}
+
+	return e
+}
+
 // OASDefault converts Error into the public API generated default error wrapper.
-func (e Error) OASDefault() *publicoas.DefaultErrorStatusCode {
+func (e Error) OASDefault() *publicoas.DefaultErrorStatusCodeWithHeaders {
 	e = e.normalize()
 
-	return &publicoas.DefaultErrorStatusCode{
+	response := &publicoas.DefaultErrorStatusCodeWithHeaders{
 		StatusCode: e.StatusCode,
 		Response:   e.oasResponse(),
 	}
+	if e.RequestID != "" {
+		response.XRequestID = publicoas.NewOptString(e.RequestID)
+	}
+
+	return response
 }
 
 // InfraOASDefault converts Error into the infra API generated default error wrapper.
-func (e Error) InfraOASDefault() *infraoas.DefaultErrorStatusCode {
+func (e Error) InfraOASDefault() *infraoas.DefaultErrorStatusCodeWithHeaders {
 	e = e.normalize()
 
-	return &infraoas.DefaultErrorStatusCode{
+	response := &infraoas.DefaultErrorStatusCodeWithHeaders{
 		StatusCode: e.StatusCode,
 		Response:   e.infraOASResponse(),
 	}
+	if e.RequestID != "" {
+		response.XRequestID = infraoas.NewOptString(e.RequestID)
+	}
+
+	return response
 }
 
 // Write writes a spec-compliant JSON error response that matches generated OpenAPI responses.
@@ -62,20 +83,28 @@ func (e Error) Write(w http.ResponseWriter) {
 	response := e.oasResponse()
 	body, err := response.MarshalJSON()
 	if err != nil {
-		fallback := New(http.StatusInternalServerError, "internal_error", "internal server error")
+		fallback := New(http.StatusInternalServerError, "internal_error", "internal server error").WithRequestID(e.RequestID)
 		fallbackResponse := fallback.oasResponse()
 		body, _ = fallbackResponse.MarshalJSON()
 		e = fallback
 	}
 
 	w.Header().Set("Content-Type", contentTypeJSON)
+	if e.RequestID != "" {
+		w.Header().Set(requestid.HeaderName, e.RequestID)
+	}
 	w.WriteHeader(e.StatusCode)
 	_, _ = w.Write(body)
 }
 
+// WriteContext writes a spec-compliant error response enriched from ctx.
+func (e Error) WriteContext(ctx context.Context, w http.ResponseWriter) {
+	e.WithContext(ctx).Write(w)
+}
+
 // WriteError writes a spec-compliant error response to the ResponseWriter.
-func WriteError(w http.ResponseWriter, code, message string, statusCode int) {
-	New(statusCode, code, message).Write(w)
+func WriteError(ctx context.Context, w http.ResponseWriter, code, message string, statusCode int) {
+	New(statusCode, code, message).WriteContext(ctx, w)
 }
 
 // FromOgenError maps ogen framework errors to canonical API errors.

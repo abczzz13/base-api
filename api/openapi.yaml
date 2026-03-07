@@ -11,6 +11,9 @@ paths:
       responses:
         "200":
           description: Service health status
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
           content:
             application/json:
               schema:
@@ -18,9 +21,17 @@ paths:
         default:
           $ref: "#/components/responses/DefaultError"
 components:
+  headers:
+    RequestId:
+      description: Request ID used to correlate logs, errors, and audit records.
+      schema:
+        type: string
   responses:
     DefaultError:
       description: Error response
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
       content:
         application/json:
           schema:

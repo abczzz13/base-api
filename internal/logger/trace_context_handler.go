@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 type traceContextHandler struct {
@@ -20,6 +22,10 @@ func (h *traceContextHandler) Enabled(ctx context.Context, level slog.Level) boo
 }
 
 func (h *traceContextHandler) Handle(ctx context.Context, record slog.Record) error {
+	if requestID := requestid.FromContext(ctx); requestID != "" {
+		record.AddAttrs(slog.String("request_id", requestID))
+	}
+
 	spanContext := trace.SpanContextFromContext(ctx)
 	if spanContext.IsValid() {
 		record.AddAttrs(

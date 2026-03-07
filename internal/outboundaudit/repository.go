@@ -50,6 +50,7 @@ type Record struct {
 	ResponseBodyTruncated bool
 	ErrorKind             string
 	ErrorMessage          string
+	RequestID             string
 	TraceID               string
 	SpanID                string
 }

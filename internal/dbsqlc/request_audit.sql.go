@@ -33,6 +33,7 @@ INSERT INTO http_request_audit (
     response_body,
     request_body_truncated,
     response_body_truncated,
+    request_id,
     trace_id,
     span_id
 ) VALUES (
@@ -58,7 +59,8 @@ INSERT INTO http_request_audit (
     $20,
     $21,
     $22,
-    $23
+    $23,
+    $24
 )
 `
 
@@ -84,6 +86,7 @@ type InsertHTTPRequestAuditParams struct {
 	ResponseBody          []byte      `json:"response_body"`
 	RequestBodyTruncated  bool        `json:"request_body_truncated"`
 	ResponseBodyTruncated bool        `json:"response_body_truncated"`
+	RequestID             string      `json:"request_id"`
 	TraceID               string      `json:"trace_id"`
 	SpanID                string      `json:"span_id"`
 }
@@ -111,6 +114,7 @@ func (q *Queries) InsertHTTPRequestAudit(ctx context.Context, arg InsertHTTPRequ
 		arg.ResponseBody,
 		arg.RequestBodyTruncated,
 		arg.ResponseBodyTruncated,
+		arg.RequestID,
 		arg.TraceID,
 		arg.SpanID,
 	)

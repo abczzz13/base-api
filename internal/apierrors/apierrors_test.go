@@ -13,12 +13,13 @@ import (
 
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 func TestWriteErrorProducesOASCompatiblePayload(t *testing.T) {
 	rr := httptest.NewRecorder()
 
-	WriteError(rr, "forbidden", "cross-origin request denied", http.StatusForbidden)
+	WriteError(context.Background(), rr, "forbidden", "cross-origin request denied", http.StatusForbidden)
 
 	if diff := cmp.Diff(http.StatusForbidden, rr.Code); diff != "" {
 		t.Fatalf("status mismatch (-want +got):\n%s", diff)
@@ -41,8 +42,31 @@ func TestWriteErrorProducesOASCompatiblePayload(t *testing.T) {
 	}
 }
 
+func TestWriteErrorIncludesRequestIDFromContext(t *testing.T) {
+	ctx := requestid.WithContext(context.Background(), "req-123")
+	rr := httptest.NewRecorder()
+
+	WriteError(ctx, rr, "forbidden", "cross-origin request denied", http.StatusForbidden)
+
+	if diff := cmp.Diff("req-123", rr.Header().Get(requestid.HeaderName)); diff != "" {
+		t.Fatalf("request ID header mismatch (-want +got):\n%s", diff)
+	}
+
+	var got publicoas.ErrorResponse
+	if err := got.UnmarshalJSON(rr.Body.Bytes()); err != nil {
+		t.Fatalf("decode body into publicoas.ErrorResponse: %v", err)
+	}
+
+	if !got.RequestId.IsSet() {
+		t.Fatal("expected requestId to be set")
+	}
+	if diff := cmp.Diff("req-123", got.RequestId.Value); diff != "" {
+		t.Fatalf("requestId mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestWriteMatchesPublicGeneratedErrorEncoding(t *testing.T) {
-	apiErr := New(http.StatusForbidden, "forbidden", "cross-origin request denied")
+	apiErr := New(http.StatusForbidden, "forbidden", "cross-origin request denied").WithRequestID("req-123")
 
 	actual := httptest.NewRecorder()
 	apiErr.Write(actual)
@@ -62,13 +86,16 @@ func TestWriteMatchesPublicGeneratedErrorEncoding(t *testing.T) {
 	if diff := cmp.Diff(expected.Header().Get("Content-Type"), actual.Header().Get("Content-Type")); diff != "" {
 		t.Fatalf("content type mismatch (-want +got):\n%s", diff)
 	}
+	if diff := cmp.Diff(expected.Header().Get(requestid.HeaderName), actual.Header().Get(requestid.HeaderName)); diff != "" {
+		t.Fatalf("request ID header mismatch (-want +got):\n%s", diff)
+	}
 	if diff := cmp.Diff(expected.Body.String(), actual.Body.String()); diff != "" {
 		t.Fatalf("body mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestWriteMatchesInfraGeneratedErrorEncoding(t *testing.T) {
-	apiErr := New(http.StatusServiceUnavailable, "not_ready", "service is not ready")
+	apiErr := New(http.StatusServiceUnavailable, "not_ready", "service is not ready").WithRequestID("req-123")
 
 	actual := httptest.NewRecorder()
 	apiErr.Write(actual)
@@ -87,6 +114,9 @@ func TestWriteMatchesInfraGeneratedErrorEncoding(t *testing.T) {
 	}
 	if diff := cmp.Diff(expected.Header().Get("Content-Type"), actual.Header().Get("Content-Type")); diff != "" {
 		t.Fatalf("content type mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get(requestid.HeaderName), actual.Header().Get(requestid.HeaderName)); diff != "" {
+		t.Fatalf("request ID header mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(expected.Body.String(), actual.Body.String()); diff != "" {
 		t.Fatalf("body mismatch (-want +got):\n%s", diff)
@@ -154,33 +184,33 @@ func TestFromOgenError(t *testing.T) {
 }
 
 type publicErrorHandler struct {
-	err *publicoas.DefaultErrorStatusCode
+	err *publicoas.DefaultErrorStatusCodeWithHeaders
 }
 
-func (h publicErrorHandler) GetHealthz(context.Context) (*publicoas.HealthResponse, error) {
+func (h publicErrorHandler) GetHealthz(context.Context) (*publicoas.HealthResponseHeaders, error) {
 	return nil, h.err
 }
 
-func (h publicErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCode {
+func (h publicErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCodeWithHeaders {
 	return h.err
 }
 
 type infraErrorHandler struct {
-	err *infraoas.DefaultErrorStatusCode
+	err *infraoas.DefaultErrorStatusCodeWithHeaders
 }
 
-func (h infraErrorHandler) GetHealthz(context.Context) (*infraoas.HealthResponse, error) {
+func (h infraErrorHandler) GetHealthz(context.Context) (*infraoas.HealthResponseHeaders, error) {
 	return nil, h.err
 }
 
-func (h infraErrorHandler) GetLivez(context.Context) (*infraoas.ProbeResponse, error) {
+func (h infraErrorHandler) GetLivez(context.Context) (*infraoas.ProbeResponseHeaders, error) {
 	return nil, h.err
 }
 
-func (h infraErrorHandler) GetReadyz(context.Context) (*infraoas.ProbeResponse, error) {
+func (h infraErrorHandler) GetReadyz(context.Context) (*infraoas.ProbeResponseHeaders, error) {
 	return nil, h.err
 }
 
-func (h infraErrorHandler) NewError(context.Context, error) *infraoas.DefaultErrorStatusCode {
+func (h infraErrorHandler) NewError(context.Context, error) *infraoas.DefaultErrorStatusCodeWithHeaders {
 	return h.err
 }

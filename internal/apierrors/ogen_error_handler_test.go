@@ -17,7 +17,9 @@ import (
 	"github.com/ogen-go/ogen/ogenerrors"
 
 	"github.com/abczzz13/base-api/internal/apierrors"
+	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 func TestOgenErrorHandler(t *testing.T) {
@@ -85,6 +87,26 @@ func TestOgenErrorHandler(t *testing.T) {
 	}
 }
 
+func TestOgenErrorHandlerIncludesRequestIDFromRequestContext(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req = req.WithContext(requestid.WithContext(req.Context(), "req-123"))
+	rr := httptest.NewRecorder()
+
+	apierrors.OgenErrorHandler(context.Background(), rr, req, errors.New("boom"))
+
+	var got publicoas.ErrorResponse
+	if err := got.UnmarshalJSON(rr.Body.Bytes()); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+
+	if !got.RequestId.IsSet() {
+		t.Fatal("expected requestId to be set")
+	}
+	if diff := cmp.Diff("req-123", got.RequestId.Value); diff != "" {
+		t.Fatalf("requestId mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestOgenErrorHandlerLogsServerErrors(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -117,6 +139,7 @@ func TestOgenErrorHandlerLogsServerErrors(t *testing.T) {
 			setDefaultLoggerForTest(t, &logs)
 
 			req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			req = req.WithContext(requestid.WithContext(req.Context(), "req-123"))
 			rr := httptest.NewRecorder()
 
 			apierrors.OgenErrorHandler(context.Background(), rr, req, tt.err)
@@ -179,6 +202,14 @@ func TestOgenErrorHandlerLogsServerErrors(t *testing.T) {
 			if diff := cmp.Diff(tt.wantErrorText, errorText); diff != "" {
 				t.Fatalf("error field mismatch (-want +got):\n%s", diff)
 			}
+
+			requestID, ok := entry["request_id"].(string)
+			if !ok {
+				t.Fatalf("expected string request_id field, got %#v", entry["request_id"])
+			}
+			if diff := cmp.Diff("req-123", requestID); diff != "" {
+				t.Fatalf("request_id field mismatch (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
@@ -187,8 +218,7 @@ func setDefaultLoggerForTest(t *testing.T, writer io.Writer) {
 	t.Helper()
 
 	previous := slog.Default()
-	logger := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	slog.SetDefault(logger)
+	logger.New(logger.Config{Format: logger.FormatJSON, Level: slog.LevelDebug, Writer: writer})
 
 	t.Cleanup(func() {
 		slog.SetDefault(previous)

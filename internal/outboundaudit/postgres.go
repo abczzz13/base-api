@@ -64,6 +64,7 @@ func (repo *postgresRepository) StoreOutboundAudit(ctx context.Context, record R
 		ResponseBodyTruncated: record.ResponseBodyTruncated,
 		ErrorKind:             strings.TrimSpace(record.ErrorKind),
 		ErrorMessage:          strings.TrimSpace(record.ErrorMessage),
+		RequestID:             strings.TrimSpace(record.RequestID),
 		TraceID:               strings.TrimSpace(record.TraceID),
 		SpanID:                strings.TrimSpace(record.SpanID),
 	})

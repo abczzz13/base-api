@@ -18,6 +18,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/abczzz13/base-api/internal/outboundaudit"
@@ -35,13 +36,14 @@ var absoluteURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
 type Config struct {
 	Client string
 	// BaseURL must be an origin-only absolute URL, such as https://api.example.com.
-	BaseURL         string
-	Timeout         time.Duration
-	MaxBodyBytes    int
-	Metrics         *Metrics
-	AuditRepository outboundaudit.Repository
-	HTTPClient      *http.Client
-	Transport       http.RoundTripper
+	BaseURL               string
+	Timeout               time.Duration
+	MaxBodyBytes          int
+	Metrics               *Metrics
+	AuditRepository       outboundaudit.Repository
+	HTTPClient            *http.Client
+	Transport             http.RoundTripper
+	PropagateTraceContext bool
 }
 
 // Service wraps an instrumented HTTP client for outbound integrations.
@@ -85,13 +87,19 @@ func New(cfg Config) (*Service, error) {
 		baseTransport = http.DefaultTransport
 	}
 
+	transportOptions := make([]otelhttp.Option, 0, 1)
+	if !cfg.PropagateTraceContext {
+		transportOptions = append(transportOptions, otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator()))
+	}
+
 	httpClient.Transport = otelhttp.NewTransport(&instrumentedTransport{
-		base:            baseTransport,
-		client:          clientName,
-		metrics:         cfg.Metrics,
-		auditRepository: cfg.AuditRepository,
-		maxBodyBytes:    maxBodyBytes,
-	})
+		base:                  baseTransport,
+		client:                clientName,
+		metrics:               cfg.Metrics,
+		auditRepository:       cfg.AuditRepository,
+		maxBodyBytes:          maxBodyBytes,
+		propagateTraceContext: cfg.PropagateTraceContext,
+	}, transportOptions...)
 
 	return &Service{
 		client:     clientName,
@@ -286,11 +294,12 @@ func effectivePort(value *url.URL) string {
 }
 
 type instrumentedTransport struct {
-	base            http.RoundTripper
-	client          string
-	metrics         *Metrics
-	auditRepository outboundaudit.Repository
-	maxBodyBytes    int
+	base                  http.RoundTripper
+	client                string
+	metrics               *Metrics
+	auditRepository       outboundaudit.Repository
+	maxBodyBytes          int
+	propagateTraceContext bool
 }
 
 func (t *instrumentedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -307,6 +316,9 @@ func (t *instrumentedTransport) RoundTrip(req *http.Request) (*http.Response, er
 	requestBody := req.Body
 	req = req.Clone(contextOrBackground(req.Context()))
 	req.Body = requestBody
+	if !t.propagateTraceContext {
+		stripTraceContextHeaders(req.Header)
+	}
 
 	var requestCapture *capturingReadCloser
 	if req.Body != nil {
@@ -399,7 +411,7 @@ func (t *instrumentedTransport) finalize(
 		RequestID:             requestid.FromContext(contextOrBackground(req.Context())),
 	}
 
-	if spanContext := trace.SpanContextFromContext(contextOrBackground(req.Context())); spanContext.IsValid() {
+	if spanContext := requestSpanContext(req); spanContext.IsValid() {
 		record.TraceID = spanContext.TraceID().String()
 		record.SpanID = spanContext.SpanID().String()
 	}
@@ -416,6 +428,28 @@ func (t *instrumentedTransport) finalize(
 			slog.Any("error", auditErr),
 		)
 	}
+}
+
+func requestSpanContext(req *http.Request) trace.SpanContext {
+	if req == nil {
+		return trace.SpanContext{}
+	}
+
+	if spanContext := trace.SpanContextFromContext(propagation.TraceContext{}.Extract(context.Background(), propagation.HeaderCarrier(req.Header))); spanContext.IsValid() {
+		return spanContext
+	}
+
+	return trace.SpanContextFromContext(contextOrBackground(req.Context()))
+}
+
+func stripTraceContextHeaders(headers http.Header) {
+	if headers == nil {
+		return
+	}
+
+	headers.Del("Traceparent")
+	headers.Del("Tracestate")
+	headers.Del("Baggage")
 }
 
 type bodyCapture struct {

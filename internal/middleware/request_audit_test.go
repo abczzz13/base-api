@@ -10,11 +10,14 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/abczzz13/clientip"
 	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
@@ -168,6 +171,49 @@ func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantResponseBody, decodeAuditJSON(t, record.ResponseBody)); diff != "" {
 		t.Fatalf("response body mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSharedClientIPResolverCachesResolutionAcrossMiddlewares(t *testing.T) {
+	store := &recordingRequestAuditStore{}
+	extractor := &countingClientIPExtractor{addr: netip.MustParseAddr("93.184.216.34")}
+	resolver := &ClientIPResolver{extractor: extractor}
+
+	handler := RequestAudit(RequestAuditConfig{
+		ClientIPResolver: resolver,
+		Store:            store,
+		Server:           "public",
+		RouteLabel:       func(*http.Request) string { return "getHealthz" },
+	})(RateLimit(RateLimitConfig{
+		ClientIPResolver: resolver,
+		Store: ratelimit.StoreFunc(func(context.Context, string, ratelimit.Policy) (ratelimit.Decision, error) {
+			return ratelimit.Decision{Allowed: true}, nil
+		}),
+		Server:        "public",
+		RouteLabel:    func(*http.Request) string { return "getHealthz" },
+		DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "https://api.example.test/healthz", nil)
+	req.RemoteAddr = "10.20.30.40:43123"
+	req.Header.Set("X-Forwarded-For", "93.184.216.34, 10.20.30.40")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusNoContent, rr.Code)
+	}
+	if got := extractor.Calls(); got != 1 {
+		t.Fatalf("extractor calls mismatch: want %d, got %d", 1, got)
+	}
+	if len(store.records) != 1 {
+		t.Fatalf("expected one request audit record, got %d", len(store.records))
+	}
+	if got := store.records[0].ClientIP; got != "93.184.216.34" {
+		t.Fatalf("client ip mismatch: want %q, got %q", "93.184.216.34", got)
 	}
 }
 
@@ -456,6 +502,28 @@ func TestRequestAuditStoreErrorsDoNotAffectResponses(t *testing.T) {
 type recordingRequestAuditStore struct {
 	records []requestaudit.Record
 	err     error
+}
+
+type countingClientIPExtractor struct {
+	mu    sync.Mutex
+	addr  netip.Addr
+	err   error
+	calls int
+}
+
+func (e *countingClientIPExtractor) ExtractAddr(*http.Request, ...clientip.OverrideOptions) (netip.Addr, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.calls++
+
+	return e.addr, e.err
+}
+
+func (e *countingClientIPExtractor) Calls() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	return e.calls
 }
 
 func (store *recordingRequestAuditStore) StoreRequestAudit(ctx context.Context, record requestaudit.Record) error {

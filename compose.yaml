@@ -18,10 +18,13 @@ services:
       - .env
     environment:
       API_ADDR: ${API_ADDR:-0.0.0.0:8080}
+      API_RATE_LIMIT_VALKEY_ADDRS: valkey:6379
       DB_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-base_api}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
+      valkey:
+        condition: service_started
     init: true
     restart: unless-stopped
     read_only: true
@@ -44,5 +47,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    init: true
+    restart: unless-stopped
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${VALKEY_PORT:-6379}:6379"
     init: true
     restart: unless-stopped

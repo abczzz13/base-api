@@ -51,6 +51,7 @@ type HTTPRequestMetrics struct {
 	httpInFlightRequests       *prometheus.GaugeVec
 	httpRecoveredPanicsTotal   *prometheus.CounterVec
 	httpRejectedRequestsTotal  *prometheus.CounterVec
+	httpRateLimitErrorsTotal   *prometheus.CounterVec
 	httpCORSPolicyDenialsTotal *prometheus.CounterVec
 }
 
@@ -166,6 +167,19 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register cors_policy_denials_total metric: %w", err)
 	}
 
+	httpRateLimitErrorsTotal, err := registerCounterVec(reg, prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: requestMetricsNamespace,
+			Subsystem: requestMetricsSubsystem,
+			Name:      "rate_limit_backend_errors_total",
+			Help:      "Total number of Valkey-backed rate limit checks that failed and fell back to configured behavior.",
+		},
+		[]string{"server", "method", "route"},
+	))
+	if err != nil {
+		return nil, fmt.Errorf("register rate_limit_backend_errors_total metric: %w", err)
+	}
+
 	return &HTTPRequestMetrics{
 		httpRequestsTotal:          httpRequestsTotal,
 		httpRequestDurationSeconds: httpRequestDurationSeconds,
@@ -174,6 +188,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		httpInFlightRequests:       httpInFlightRequests,
 		httpRecoveredPanicsTotal:   httpRecoveredPanicsTotal,
 		httpRejectedRequestsTotal:  httpRejectedRequestsTotal,
+		httpRateLimitErrorsTotal:   httpRateLimitErrorsTotal,
 		httpCORSPolicyDenialsTotal: httpCORSPolicyDenialsTotal,
 	}, nil
 }
@@ -347,6 +362,15 @@ func observeCORSPolicyDenial(r *http.Request) {
 	}
 
 	metricsCtx.metrics.httpCORSPolicyDenialsTotal.WithLabelValues(metricsCtx.labels.server, metricsCtx.labels.method, metricsCtx.labels.route).Inc()
+}
+
+func observeRateLimitBackendError(r *http.Request) {
+	metricsCtx := requestMetricsContextFromRequest(r)
+	if metricsCtx.metrics == nil {
+		return
+	}
+
+	metricsCtx.metrics.httpRateLimitErrorsTotal.WithLabelValues(metricsCtx.labels.server, metricsCtx.labels.method, metricsCtx.labels.route).Inc()
 }
 
 type requestMetricsLabels struct {

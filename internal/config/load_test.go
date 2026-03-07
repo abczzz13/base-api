@@ -13,6 +13,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/publicroute"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
@@ -30,35 +32,44 @@ func TestLoad(t *testing.T) {
 		{
 			name: "uses explicit values",
 			env: map[string]string{
-				keyAPIAddr:                 "0.0.0.0:8081",
-				keyAPIInfraAddr:            "127.0.0.1:9191",
-				keyAPIEnvironment:          "production",
-				keyLogFormat:               "json",
-				keyLogLevel:                "debug",
-				keyAPIReadyzTimeout:        "750ms",
-				keyAPIReadHeaderTimeout:    "3s",
-				keyAPIReadTimeout:          "11s",
-				keyAPIWriteTimeout:         "25s",
-				keyAPIIdleTimeout:          "45s",
-				keyAPIRequestAuditEnabled:  "false",
-				keyAPIRequestLoggerEnabled: "false",
-				keyWeatherEnabled:          "true",
-				keyWeatherGeocodingBaseURL: "https://geocoding-api.weather.example",
-				keyWeatherForecastBaseURL:  "https://forecast.weather.example",
-				keyWeatherAPIKey:           "super-secret",
-				keyWeatherTimeout:          "4s",
-				keyDBURL:                   "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
-				keyDBMinConns:              "2",
-				keyDBMaxConns:              "40",
-				keyDBMaxConnLifetime:       "2h",
-				keyDBMaxConnIdleTime:       "20m",
-				keyDBHealthCheckPeriod:     "45s",
-				keyDBConnectTimeout:        "7s",
-				keyDBMigrateOnStartup:      "false",
-				keyDBMigrateTimeout:        "2m",
-				keyDBStartupMaxAttempts:    "7",
-				keyDBStartupBackoffInitial: "2s",
-				keyDBStartupBackoffMax:     "20s",
+				keyAPIAddr:                        "0.0.0.0:8081",
+				keyAPIInfraAddr:                   "127.0.0.1:9191",
+				keyAPIEnvironment:                 "production",
+				keyLogFormat:                      "json",
+				keyLogLevel:                       "debug",
+				keyAPIReadyzTimeout:               "750ms",
+				keyAPIReadHeaderTimeout:           "3s",
+				keyAPIReadTimeout:                 "11s",
+				keyAPIWriteTimeout:                "25s",
+				keyAPIIdleTimeout:                 "45s",
+				keyAPIRequestAuditEnabled:         "false",
+				keyAPIRequestLoggerEnabled:        "false",
+				keyAPIRateLimitEnabled:            "true",
+				keyAPIRateLimitFailOpen:           "false",
+				keyAPIRateLimitTimeout:            "75ms",
+				keyAPIRateLimitDefaultRPS:         "12.5",
+				keyAPIRateLimitDefaultBurst:       "21",
+				keyAPIRateLimitValkeyMode:         "cluster",
+				keyAPIRateLimitValkeyAddrs:        "valkey-1.internal:6379,valkey-2.internal:6379",
+				keyAPIRateLimitValkeyKeyPrefix:    "custom:rl",
+				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":3.5,"burst":7},"getHealthz":{"disabled":true}}`,
+				keyWeatherEnabled:                 "true",
+				keyWeatherGeocodingBaseURL:        "https://geocoding-api.weather.example",
+				keyWeatherForecastBaseURL:         "https://forecast.weather.example",
+				keyWeatherAPIKey:                  "super-secret",
+				keyWeatherTimeout:                 "4s",
+				keyDBURL:                          "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
+				keyDBMinConns:                     "2",
+				keyDBMaxConns:                     "40",
+				keyDBMaxConnLifetime:              "2h",
+				keyDBMaxConnIdleTime:              "20m",
+				keyDBHealthCheckPeriod:            "45s",
+				keyDBConnectTimeout:               "7s",
+				keyDBMigrateOnStartup:             "false",
+				keyDBMigrateTimeout:               "2m",
+				keyDBStartupMaxAttempts:           "7",
+				keyDBStartupBackoffInitial:        "2s",
+				keyDBStartupBackoffMax:            "20s",
 			},
 			want: func() Config {
 				cfg := defaultConfig()
@@ -74,6 +85,19 @@ func TestLoad(t *testing.T) {
 				cfg.IdleTimeout = 45 * time.Second
 				cfg.RequestAudit.Enabled = boolPtr(false)
 				cfg.RequestLogger.Enabled = boolPtr(false)
+				cfg.RateLimit.Enabled = true
+				cfg.RateLimit.FailOpen = false
+				cfg.RateLimit.Timeout = 75 * time.Millisecond
+				cfg.RateLimit.DefaultPolicy = ratelimit.Policy{RequestsPerSecond: 12.5, Burst: 21}
+				cfg.RateLimit.Valkey = ratelimit.ValkeyConfig{
+					Mode:      ratelimit.ValkeyModeCluster,
+					Addrs:     []string{"valkey-1.internal:6379", "valkey-2.internal:6379"},
+					KeyPrefix: "custom:rl",
+				}
+				cfg.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
+					publicroute.OperationGetHealthz:        {Disabled: true},
+					publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(3.5), Burst: intPtr(7)},
+				}
 				cfg.Weather.IntegrationEnabled = true
 				cfg.Weather.GeocodingBaseURL = "https://geocoding-api.weather.example"
 				cfg.Weather.ForecastBaseURL = "https://forecast.weather.example"
@@ -128,15 +152,29 @@ func TestLoad(t *testing.T) {
 			}(),
 		},
 		{
-			name: "parses request audit trusted proxy CIDRs",
+			name: "parses trusted proxy CIDRs",
 			env: map[string]string{
-				keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8, 2001:db8::/32, 10.0.0.0/8",
+				keyAPITrustedProxyCIDRs: "10.0.0.0/8, 2001:db8::/32, 10.0.0.0/8",
 			},
 			want: func() Config {
 				cfg := defaultConfig()
-				cfg.RequestAudit.TrustedProxyCIDRs = []netip.Prefix{
+				cfg.ClientIP.TrustedProxyCIDRs = []netip.Prefix{
 					netip.MustParsePrefix("10.0.0.0/8"),
 					netip.MustParsePrefix("2001:db8::/32"),
+				}
+				return cfg
+			}(),
+		},
+		{
+			name: "parses rate limit route overrides JSON",
+			env: map[string]string{
+				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":2.5},"getHealthz":{"burst":4}}`,
+			},
+			want: func() Config {
+				cfg := defaultConfig()
+				cfg.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
+					publicroute.OperationGetHealthz:        {Burst: intPtr(4)},
+					publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(2.5)},
 				}
 				return cfg
 			}(),
@@ -295,11 +333,11 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 			wantContains: []string{"invalid boolean for OTEL_SDK_DISABLED=\"not-a-bool\""},
 		},
 		{
-			name: "invalid request audit trusted proxy CIDRs fail",
+			name: "invalid trusted proxy CIDRs fail",
 			env: map[string]string{
-				keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8,not-a-cidr",
+				keyAPITrustedProxyCIDRs: "10.0.0.0/8,not-a-cidr",
 			},
-			wantContains: []string{"invalid CIDR \"not-a-cidr\" for API_REQUEST_AUDIT_TRUSTED_PROXY_CIDRS"},
+			wantContains: []string{"invalid CIDR \"not-a-cidr\" for API_TRUSTED_PROXY_CIDRS"},
 		},
 		{
 			name: "invalid request audit enabled boolean fails",
@@ -314,6 +352,48 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 				keyAPIRequestLoggerEnabled: "maybe",
 			},
 			wantContains: []string{"invalid boolean for API_REQUEST_LOGGER_ENABLED=\"maybe\""},
+		},
+		{
+			name: "invalid rate limit enabled boolean fails",
+			env: map[string]string{
+				keyAPIRateLimitEnabled: "maybe",
+			},
+			wantContains: []string{"invalid boolean for API_RATE_LIMIT_ENABLED=\"maybe\""},
+		},
+		{
+			name: "invalid rate limit default rps fails",
+			env: map[string]string{
+				keyAPIRateLimitDefaultRPS: "0",
+			},
+			wantContains: []string{"non-positive float for API_RATE_LIMIT_DEFAULT_RPS=\"0\""},
+		},
+		{
+			name: "invalid rate limit default burst fails",
+			env: map[string]string{
+				keyAPIRateLimitDefaultBurst: "0",
+			},
+			wantContains: []string{"non-positive integer for API_RATE_LIMIT_DEFAULT_BURST=0"},
+		},
+		{
+			name: "invalid rate limit route overrides json fails",
+			env: map[string]string{
+				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":`,
+			},
+			wantContains: []string{"invalid API_RATE_LIMIT_ROUTE_OVERRIDES_JSON:"},
+		},
+		{
+			name: "unknown rate limit route override fails",
+			env: map[string]string{
+				keyAPIRateLimitRouteOverridesJSON: `{"unknownOperation":{"burst":2}}`,
+			},
+			wantContains: []string{"unknown public operation ID \"unknownOperation\""},
+		},
+		{
+			name: "invalid rate limit route override fails",
+			env: map[string]string{
+				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"disabled":true,"burst":2}}`,
+			},
+			wantContains: []string{"route \"getCurrentWeather\": disabled overrides cannot set requestsPerSecond or burst"},
 		},
 		{
 			name: "invalid CORS and CSRF origins fail",
@@ -374,6 +454,22 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 				keyAPIAddr: "invalid-address",
 			},
 			wantContains: []string{"invalid API_ADDR=\"invalid-address\""},
+		},
+		{
+			name: "enabled rate limit requires valkey addresses",
+			env: map[string]string{
+				keyAPIRateLimitEnabled: "true",
+			},
+			wantContains: []string{"API_RATE_LIMIT_ENABLED is enabled but API_RATE_LIMIT_VALKEY_ADDRS is empty"},
+		},
+		{
+			name: "invalid rate limit valkey mode fails when enabled",
+			env: map[string]string{
+				keyAPIRateLimitEnabled:     "true",
+				keyAPIRateLimitValkeyMode:  "sentinel",
+				keyAPIRateLimitValkeyAddrs: "valkey.internal:6379",
+			},
+			wantContains: []string{"invalid API_RATE_LIMIT_VALKEY_MODE=\"sentinel\": unsupported mode \"sentinel\""},
 		},
 		{
 			name: "invalid weather enabled boolean fails",
@@ -506,50 +602,59 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	dir := t.TempDir()
 
 	values := map[string]string{
-		keyAPIAddr:                          "127.0.0.1:8081",
-		keyAPIInfraAddr:                     "127.0.0.1:9191",
-		keyAPIEnvironment:                   "production",
-		keyLogFormat:                        "json",
-		keyLogLevel:                         "debug",
-		keyAPIReadyzTimeout:                 "750ms",
-		keyAPIReadHeaderTimeout:             "3s",
-		keyAPIReadTimeout:                   "11s",
-		keyAPIWriteTimeout:                  "25s",
-		keyAPIIdleTimeout:                   "45s",
-		keyAPICORSAllowedOrigins:            "https://client.example",
-		keyAPICORSAllowedMethods:            "GET,POST",
-		keyAPICORSAllowedHeaders:            "Content-Type,Authorization",
-		keyAPICORSExposedHeaders:            "X-Request-Id",
-		keyAPICORSAllowCredentials:          "true",
-		keyAPICORSMaxAge:                    "10m",
-		keyAPICSRFTrustedOrigins:            "https://client.example",
-		keyAPICSRFEnabled:                   "true",
-		keyAPIRequestAuditEnabled:           "false",
-		keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8,192.168.0.0/16",
-		keyAPIRequestLoggerEnabled:          "false",
-		keyWeatherEnabled:                   "true",
-		keyWeatherGeocodingBaseURL:          "https://geocoding-api.weather.example",
-		keyWeatherForecastBaseURL:           "https://forecast.weather.example",
-		keyWeatherAPIKey:                    "weather-secret",
-		keyWeatherTimeout:                   "4s",
-		keyOTELServiceName:                  "base-api-custom",
-		keyOTELSDKDisabled:                  "false",
-		keyOTELTracesSampler:                "traceidratio",
-		keyOTELTracesSamplerArg:             "0.25",
-		keyOTELExporterOTLPEndpoint:         "http://localhost:4318",
-		keyOTELExporterOTLPTracesEndpoint:   "http://localhost:4318/v1/traces",
-		keyDBURL:                            "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
-		keyDBMinConns:                       "2",
-		keyDBMaxConns:                       "40",
-		keyDBMaxConnLifetime:                "2h",
-		keyDBMaxConnIdleTime:                "20m",
-		keyDBHealthCheckPeriod:              "45s",
-		keyDBConnectTimeout:                 "7s",
-		keyDBMigrateOnStartup:               "false",
-		keyDBMigrateTimeout:                 "2m",
-		keyDBStartupMaxAttempts:             "9",
-		keyDBStartupBackoffInitial:          "3s",
-		keyDBStartupBackoffMax:              "40s",
+		keyAPIAddr:                        "127.0.0.1:8081",
+		keyAPIInfraAddr:                   "127.0.0.1:9191",
+		keyAPIEnvironment:                 "production",
+		keyLogFormat:                      "json",
+		keyLogLevel:                       "debug",
+		keyAPIReadyzTimeout:               "750ms",
+		keyAPIReadHeaderTimeout:           "3s",
+		keyAPIReadTimeout:                 "11s",
+		keyAPIWriteTimeout:                "25s",
+		keyAPIIdleTimeout:                 "45s",
+		keyAPICORSAllowedOrigins:          "https://client.example",
+		keyAPICORSAllowedMethods:          "GET,POST",
+		keyAPICORSAllowedHeaders:          "Content-Type,Authorization",
+		keyAPICORSExposedHeaders:          "X-Request-Id",
+		keyAPICORSAllowCredentials:        "true",
+		keyAPICORSMaxAge:                  "10m",
+		keyAPICSRFTrustedOrigins:          "https://client.example",
+		keyAPICSRFEnabled:                 "true",
+		keyAPIRequestAuditEnabled:         "false",
+		keyAPITrustedProxyCIDRs:           "10.0.0.0/8,192.168.0.0/16",
+		keyAPIRequestLoggerEnabled:        "false",
+		keyAPIRateLimitEnabled:            "true",
+		keyAPIRateLimitFailOpen:           "false",
+		keyAPIRateLimitTimeout:            "80ms",
+		keyAPIRateLimitDefaultRPS:         "9.5",
+		keyAPIRateLimitDefaultBurst:       "12",
+		keyAPIRateLimitValkeyMode:         "standalone",
+		keyAPIRateLimitValkeyAddrs:        "127.0.0.1:6379",
+		keyAPIRateLimitValkeyKeyPrefix:    "file:rl",
+		keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":2.5,"burst":4}}`,
+		keyWeatherEnabled:                 "true",
+		keyWeatherGeocodingBaseURL:        "https://geocoding-api.weather.example",
+		keyWeatherForecastBaseURL:         "https://forecast.weather.example",
+		keyWeatherAPIKey:                  "weather-secret",
+		keyWeatherTimeout:                 "4s",
+		keyOTELServiceName:                "base-api-custom",
+		keyOTELSDKDisabled:                "false",
+		keyOTELTracesSampler:              "traceidratio",
+		keyOTELTracesSamplerArg:           "0.25",
+		keyOTELExporterOTLPEndpoint:       "http://localhost:4318",
+		keyOTELExporterOTLPTracesEndpoint: "http://localhost:4318/v1/traces",
+		keyDBURL:                          "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
+		keyDBMinConns:                     "2",
+		keyDBMaxConns:                     "40",
+		keyDBMaxConnLifetime:              "2h",
+		keyDBMaxConnIdleTime:              "20m",
+		keyDBHealthCheckPeriod:            "45s",
+		keyDBConnectTimeout:               "7s",
+		keyDBMigrateOnStartup:             "false",
+		keyDBMigrateTimeout:               "2m",
+		keyDBStartupMaxAttempts:           "9",
+		keyDBStartupBackoffInitial:        "3s",
+		keyDBStartupBackoffMax:            "40s",
 	}
 
 	env := make(map[string]string, len(values))
@@ -587,11 +692,24 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	want.CSRF.TrustedOrigins = []string{"https://client.example"}
 	want.CSRF.Enabled = true
 	want.RequestAudit.Enabled = boolPtr(false)
-	want.RequestAudit.TrustedProxyCIDRs = []netip.Prefix{
+	want.ClientIP.TrustedProxyCIDRs = []netip.Prefix{
 		netip.MustParsePrefix("10.0.0.0/8"),
 		netip.MustParsePrefix("192.168.0.0/16"),
 	}
 	want.RequestLogger.Enabled = boolPtr(false)
+	want.RateLimit.Enabled = true
+	want.RateLimit.FailOpen = false
+	want.RateLimit.Timeout = 80 * time.Millisecond
+	want.RateLimit.DefaultPolicy = ratelimit.Policy{RequestsPerSecond: 9.5, Burst: 12}
+	want.RateLimit.Valkey = ratelimit.ValkeyConfig{
+		Mode:      ratelimit.ValkeyModeStandalone,
+		Addrs:     []string{"127.0.0.1:6379"},
+		KeyPrefix: "file:rl",
+	}
+	want.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
+		publicroute.OperationGetHealthz:        {Disabled: true},
+		publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(2.5), Burst: intPtr(4)},
+	}
 	want.Weather.IntegrationEnabled = true
 	want.Weather.GeocodingBaseURL = "https://geocoding-api.weather.example"
 	want.Weather.ForecastBaseURL = "https://forecast.weather.example"
@@ -711,5 +829,9 @@ func float64Ptr(value float64) *float64 {
 }
 
 func boolPtr(value bool) *bool {
+	return &value
+}
+
+func intPtr(value int) *int {
 	return &value
 }

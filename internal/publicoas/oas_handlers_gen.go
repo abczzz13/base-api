@@ -58,7 +58,7 @@ func (s *Server) handleGetCurrentWeatherRequest(args [0]string, argsEscaped bool
 
 	var rawBody []byte
 
-	var response *CurrentWeatherResponseHeaders
+	var response GetCurrentWeatherRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -79,7 +79,7 @@ func (s *Server) handleGetCurrentWeatherRequest(args [0]string, argsEscaped bool
 		type (
 			Request  = struct{}
 			Params   = GetCurrentWeatherParams
-			Response = *CurrentWeatherResponseHeaders
+			Response = GetCurrentWeatherRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -139,7 +139,7 @@ func (s *Server) handleGetHealthzRequest(args [0]string, argsEscaped bool, w htt
 
 	var rawBody []byte
 
-	var response *HealthResponseHeaders
+	var response GetHealthzRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -155,7 +155,7 @@ func (s *Server) handleGetHealthzRequest(args [0]string, argsEscaped bool, w htt
 		type (
 			Request  = struct{}
 			Params   = struct{}
-			Response = *HealthResponseHeaders
+			Response = GetHealthzRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,

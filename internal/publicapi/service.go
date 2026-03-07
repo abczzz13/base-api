@@ -25,7 +25,7 @@ func NewService(cfg config.Config, weatherClient weather.Client) *Service {
 	return &Service{cfg: cfg, weatherClient: weatherClient}
 }
 
-func (s *Service) GetHealthz(ctx context.Context) (*publicoas.HealthResponseHeaders, error) {
+func (s *Service) GetHealthz(ctx context.Context) (publicoas.GetHealthzRes, error) {
 	response := &publicoas.HealthResponseHeaders{
 		Response: publicoas.HealthResponse{
 			Status: "OK",
@@ -36,7 +36,7 @@ func (s *Service) GetHealthz(ctx context.Context) (*publicoas.HealthResponseHead
 	return response, nil
 }
 
-func (s *Service) GetCurrentWeather(ctx context.Context, params publicoas.GetCurrentWeatherParams) (*publicoas.CurrentWeatherResponseHeaders, error) {
+func (s *Service) GetCurrentWeather(ctx context.Context, params publicoas.GetCurrentWeatherParams) (publicoas.GetCurrentWeatherRes, error) {
 	if s.weatherClient == nil {
 		return nil, apierrors.New(http.StatusServiceUnavailable, "weather_unavailable", "weather integration is not configured").WithContext(ctx).OASDefault()
 	}

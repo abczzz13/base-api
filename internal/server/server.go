@@ -97,6 +97,12 @@ func Run(
 	)
 	runtimeCleanup.Add(shutdownOutboundAuditRepository)
 
+	rateLimiter, shutdownRateLimiter, err := setupRateLimiter(ctx, cfg.RateLimit)
+	if err != nil {
+		return err
+	}
+	runtimeCleanup.Add(shutdownRateLimiter)
+
 	var weatherClient weather.Client
 	if cfg.Weather.Enabled() {
 		weatherGeocodingClient, err := outboundhttp.New(outboundhttp.Config{
@@ -128,6 +134,7 @@ func Run(
 	publicHandler, err := publicapi.NewHandler(cfg, publicapi.Dependencies{
 		RequestMetrics:         metricsRuntime.http,
 		RequestAuditRepository: requestAuditRepository,
+		RateLimiter:            rateLimiter,
 		WeatherClient:          weatherClient,
 	})
 	if err != nil {
@@ -207,6 +214,14 @@ func logStartupConfiguration(ctx context.Context, cfg config.Config) {
 		slog.Int("cors_allowed_origins_count", len(cfg.CORS.AllowedOrigins)),
 		slog.Bool("cors_allow_credentials", cfg.CORS.AllowCredentials),
 		slog.Bool("request_logger_enabled", cfg.RequestLogger.IsEnabled()),
+		slog.Bool("rate_limit_enabled", cfg.RateLimit.IsEnabled()),
+		slog.Bool("rate_limit_fail_open", cfg.RateLimit.FailOpen),
+		slog.Duration("rate_limit_timeout", cfg.RateLimit.Timeout),
+		slog.Float64("rate_limit_default_rps", cfg.RateLimit.DefaultPolicy.RequestsPerSecond),
+		slog.Int("rate_limit_default_burst", cfg.RateLimit.DefaultPolicy.Burst),
+		slog.String("rate_limit_valkey_mode", string(cfg.RateLimit.Valkey.NormalizedMode())),
+		slog.Int("rate_limit_valkey_addrs_count", len(cfg.RateLimit.Valkey.Addrs)),
+		slog.Int("rate_limit_route_overrides_count", len(cfg.RateLimit.RouteOverrides)),
 		slog.Bool("request_audit_enabled", cfg.RequestAudit.IsEnabled()),
 		slog.Bool("tracing_enabled", cfg.OTEL.TracingEnabled),
 		slog.String("tracing_sampler", string(cfg.OTEL.TracesSampler)),
@@ -217,10 +232,10 @@ func logStartupConfiguration(ctx context.Context, cfg config.Config) {
 		slog.Int64("database_startup_max_attempts", int64(cfg.DB.StartupMaxAttempts)),
 		slog.Duration("database_startup_backoff_initial", cfg.DB.StartupBackoffInitial),
 		slog.Duration("database_startup_backoff_max", cfg.DB.StartupBackoffMax),
-		slog.String("request_audit_client_ip_security_mode", "strict"),
-		slog.String("request_audit_client_ip_priority", "x_forwarded_for,remote_addr"),
-		slog.String("request_audit_trusted_proxy_source", requestAuditTrustedProxySource(cfg.RequestAudit)),
-		slog.Int("request_audit_trusted_proxy_cidrs_count", len(cfg.RequestAudit.TrustedProxyCIDRs)),
+		slog.String("client_ip_security_mode", "strict"),
+		slog.String("client_ip_priority", "x_forwarded_for,remote_addr"),
+		slog.String("client_ip_trusted_proxy_source", clientIPTrustedProxySource(cfg.ClientIP)),
+		slog.Int("client_ip_trusted_proxy_cidrs_count", len(cfg.ClientIP.TrustedProxyCIDRs)),
 	}
 
 	if cfg.OTEL.TracesSamplerArg != nil {
@@ -232,7 +247,7 @@ func logStartupConfiguration(ctx context.Context, cfg config.Config) {
 	slog.LogAttrs(ctx, slog.LevelInfo, "startup configuration", attrs...)
 }
 
-func requestAuditTrustedProxySource(cfg config.RequestAuditConfig) string {
+func clientIPTrustedProxySource(cfg config.ClientIPConfig) string {
 	if len(cfg.TrustedProxyCIDRs) == 0 {
 		return "default_local_private"
 	}

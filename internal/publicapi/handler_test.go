@@ -3,9 +3,11 @@ package publicapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/weather"
 )
@@ -342,6 +345,193 @@ func TestNewPublicHandlerWeatherEndpointUsesInjectedClient(t *testing.T) {
 	}
 }
 
+func TestNewPublicHandlerRateLimitRequiresDependencyWhenEnabled(t *testing.T) {
+	_, err := newPublicHandlerForTestWithDependencies(t, config.Config{
+		Environment: "test",
+		RateLimit: config.RateLimitConfig{
+			Enabled: true,
+			DefaultPolicy: ratelimit.Policy{
+				RequestsPerSecond: 1,
+				Burst:             1,
+			},
+		},
+	}, Dependencies{})
+	if err == nil {
+		t.Fatal("expected missing rate limiter dependency error")
+	}
+	if got := err.Error(); got != "rate limiter dependency is required" {
+		t.Fatalf("error mismatch: want %q, got %q", "rate limiter dependency is required", got)
+	}
+}
+
+func TestNewPublicHandlerRateLimitRejectsRequests(t *testing.T) {
+	handler, err := newPublicHandlerForTestWithDependencies(t, config.Config{
+		Environment: "test",
+		CORS: config.CORSConfig{
+			AllowedOrigins: []string{"https://client.example"},
+		},
+		RateLimit: config.RateLimitConfig{
+			Enabled:       true,
+			FailOpen:      true,
+			Timeout:       50 * time.Millisecond,
+			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
+			RouteOverrides: map[string]ratelimit.RouteOverride{
+				"getHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+			},
+		},
+	}, Dependencies{
+		RateLimiter: ratelimit.StoreFunc(func(ctx context.Context, key string, policy ratelimit.Policy) (ratelimit.Decision, error) {
+			if diff := cmp.Diff(ratelimit.Policy{RequestsPerSecond: 1, Burst: 1}, policy); diff != "" {
+				t.Fatalf("policy mismatch (-want +got):\n%s", diff)
+			}
+			return ratelimit.Decision{Allowed: false, RetryAfter: 1500 * time.Millisecond}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("Origin", "https://client.example")
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusTooManyRequests, rr.Code)
+	}
+	if got := rr.Header().Get("Retry-After"); got != "2" {
+		t.Fatalf("Retry-After mismatch: want %q, got %q", "2", got)
+	}
+	if got := rr.Header().Get("RateLimit"); got != `"default";r=0;t=2` {
+		t.Fatalf("RateLimit mismatch: want %q, got %q", `"default";r=0;t=2`, got)
+	}
+	if got := rr.Header().Get("RateLimit-Policy"); got != `"default";q=1;w=1` {
+		t.Fatalf("RateLimit-Policy mismatch: want %q, got %q", `"default";q=1;w=1`, got)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://client.example" {
+		t.Fatalf("Access-Control-Allow-Origin mismatch: want %q, got %q", "https://client.example", got)
+	}
+	if got := rr.Header().Get("X-Request-Id"); got == "" {
+		t.Fatal("expected non-empty X-Request-Id response header")
+	}
+	if body := rr.Body.String(); !strings.Contains(body, `"code":"too_many_requests"`) || !strings.Contains(body, `"message":"rate limit exceeded"`) {
+		t.Fatalf("body mismatch: got %q", body)
+	}
+}
+
+func TestNewPublicHandlerRateLimitUsesSharedTrustedProxyCIDRsWhenAuditDisabled(t *testing.T) {
+	handler, err := newPublicHandlerForTestWithDependencies(t, config.Config{
+		Environment: "test",
+		ClientIP: config.ClientIPConfig{
+			TrustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("203.0.113.0/24")},
+		},
+		RequestAudit: config.RequestAuditConfig{
+			Enabled: boolPtr(false),
+		},
+		RateLimit: config.RateLimitConfig{
+			Enabled:       true,
+			FailOpen:      true,
+			Timeout:       50 * time.Millisecond,
+			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
+		},
+	}, Dependencies{
+		RateLimiter: ratelimit.StoreFunc(func(ctx context.Context, key string, policy ratelimit.Policy) (ratelimit.Decision, error) {
+			if diff := cmp.Diff(ratelimit.Policy{RequestsPerSecond: 1, Burst: 1}, policy); diff != "" {
+				t.Fatalf("policy mismatch (-want +got):\n%s", diff)
+			}
+			if got, want := key, "public:getHealthz:8.8.8.8"; got != want {
+				t.Fatalf("key mismatch: want %q, got %q", want, got)
+			}
+			return ratelimit.Decision{Allowed: true}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.RemoteAddr = "203.0.113.10:43123"
+	req.Header.Set("X-Forwarded-For", "8.8.8.8")
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestNewPublicHandlerRateLimitFailsOpen(t *testing.T) {
+	handler, err := newPublicHandlerForTestWithDependencies(t, config.Config{
+		Environment: "test",
+		RateLimit: config.RateLimitConfig{
+			Enabled:       true,
+			FailOpen:      true,
+			Timeout:       50 * time.Millisecond,
+			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
+			RouteOverrides: map[string]ratelimit.RouteOverride{
+				"getHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+			},
+		},
+	}, Dependencies{
+		RateLimiter: ratelimit.StoreFunc(func(context.Context, string, ratelimit.Policy) (ratelimit.Decision, error) {
+			return ratelimit.Decision{}, errors.New("valkey unavailable")
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestNewPublicHandlerRateLimitBackendFailureReturnsServiceUnavailable(t *testing.T) {
+	handler, err := newPublicHandlerForTestWithDependencies(t, config.Config{
+		Environment: "test",
+		RateLimit: config.RateLimitConfig{
+			Enabled:       true,
+			FailOpen:      false,
+			Timeout:       50 * time.Millisecond,
+			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
+			RouteOverrides: map[string]ratelimit.RouteOverride{
+				"getHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+			},
+		},
+	}, Dependencies{
+		RateLimiter: ratelimit.StoreFunc(func(context.Context, string, ratelimit.Policy) (ratelimit.Decision, error) {
+			return ratelimit.Decision{}, errors.New("valkey unavailable")
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusServiceUnavailable, rr.Code)
+	}
+	if got := rr.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After mismatch: want empty, got %q", got)
+	}
+	if got := rr.Header().Get("RateLimit"); got != "" {
+		t.Fatalf("RateLimit mismatch: want empty, got %q", got)
+	}
+	if got := rr.Header().Get("RateLimit-Policy"); got != "" {
+		t.Fatalf("RateLimit-Policy mismatch: want empty, got %q", got)
+	}
+	if body := rr.Body.String(); !strings.Contains(body, `"code":"rate_limit_unavailable"`) || !strings.Contains(body, `"message":"rate limit backend unavailable"`) {
+		t.Fatalf("body mismatch: got %q", body)
+	}
+}
+
 func newPublicHandlerForTest(t *testing.T, cfg config.Config) (http.Handler, error) {
 	return newPublicHandlerForTestWithDependencies(t, cfg, Dependencies{})
 }
@@ -361,4 +551,16 @@ func newPublicHandlerForTestWithDependencies(t *testing.T, cfg config.Config, de
 	}
 
 	return NewHandler(cfg, deps)
+}
+
+func float64Ptr(value float64) *float64 {
+	return &value
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/publicroute"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
@@ -22,6 +24,12 @@ const (
 	defaultWeatherGeocodingBaseURL = "https://geocoding-api.open-meteo.com"
 	defaultWeatherForecastBaseURL  = "https://api.open-meteo.com"
 	defaultWeatherTimeout          = 5 * time.Second
+	defaultRateLimitEnabled        = false
+	defaultRateLimitFailOpen       = true
+	defaultRateLimitTimeout        = 100 * time.Millisecond
+	defaultRateLimitDefaultRPS     = 5.0
+	defaultRateLimitDefaultBurst   = 10
+	defaultRateLimitKeyPrefix      = "base-api:ratelimit"
 	defaultDBMinConns              = int32(0)
 	defaultDBMaxConns              = int32(20)
 	defaultDBMaxConnLifetime       = time.Hour
@@ -52,6 +60,19 @@ func defaultConfig() Config {
 		},
 		CSRF: CSRFConfig{
 			Enabled: true,
+		},
+		RateLimit: RateLimitConfig{
+			Enabled:  defaultRateLimitEnabled,
+			FailOpen: defaultRateLimitFailOpen,
+			Timeout:  defaultRateLimitTimeout,
+			Valkey:   ratelimit.ValkeyConfig{Mode: ratelimit.ValkeyModeStandalone, KeyPrefix: defaultRateLimitKeyPrefix},
+			DefaultPolicy: ratelimit.Policy{
+				RequestsPerSecond: defaultRateLimitDefaultRPS,
+				Burst:             defaultRateLimitDefaultBurst,
+			},
+			RouteOverrides: map[string]ratelimit.RouteOverride{
+				publicroute.OperationGetHealthz: {Disabled: true},
+			},
 		},
 		OTEL: OTELConfig{
 			TracesSampler: telemetry.DefaultTraceSampler,

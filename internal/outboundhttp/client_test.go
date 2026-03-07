@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/abczzz13/base-api/internal/outboundaudit"
 	"github.com/abczzz13/base-api/internal/requestid"
@@ -99,9 +100,8 @@ func TestServiceDoRecordsMetricsAndAudit(t *testing.T) {
 	}
 
 	record := auditStore.records[0]
-	traceparent := record.RequestHeaders["Traceparent"]
-	if len(traceparent) != 1 || traceparent[0] == "" {
-		t.Fatalf("expected outbound traceparent header to be captured, got %#v", traceparent)
+	if traceparent := record.RequestHeaders["Traceparent"]; len(traceparent) != 0 {
+		t.Fatalf("expected outbound traceparent header to be stripped by default, got %#v", traceparent)
 	}
 	if diff := cmp.Diff("billing", record.Client); diff != "" {
 		t.Fatalf("client mismatch (-want +got):\n%s", diff)
@@ -115,7 +115,7 @@ func TestServiceDoRecordsMetricsAndAudit(t *testing.T) {
 	if diff := cmp.Diff("token=%5BREDACTED%5D", record.Query); diff != "" {
 		t.Fatalf("query mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(map[string][]string{"Authorization": {"[REDACTED]"}, "Accept": {"application/json"}, "Content-Type": {"application/json"}, "Traceparent": traceparent}, filterHeaders(record.RequestHeaders, "Accept", "Authorization", "Content-Type", "Traceparent")); diff != "" {
+	if diff := cmp.Diff(map[string][]string{"Authorization": {"[REDACTED]"}, "Accept": {"application/json"}, "Content-Type": {"application/json"}}, filterHeaders(record.RequestHeaders, "Accept", "Authorization", "Content-Type", "Traceparent")); diff != "" {
 		t.Fatalf("request headers mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(map[string][]string{"Set-Cookie": {"[REDACTED]"}, "Content-Type": {"application/json"}}, filterHeaders(record.ResponseHeaders, "Content-Type", "Set-Cookie")); diff != "" {
@@ -271,6 +271,109 @@ func TestServiceDoMarksEarlyClosedResponseBodiesAsTruncated(t *testing.T) {
 	}
 }
 
+func TestServiceDoPropagatesTraceHeadersWhenEnabled(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	provider := sdktrace.NewTracerProvider()
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+		_ = provider.Shutdown(context.Background())
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Traceparent"); got == "" {
+			t.Fatal("expected traceparent header to be propagated")
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	auditStore := &recordingAuditRepository{}
+	service, err := New(Config{
+		Client:                "billing",
+		BaseURL:               server.URL,
+		AuditRepository:       auditStore,
+		PropagateTraceContext: true,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	req, err := service.NewRequest(context.Background(), "get_invoice", http.MethodGet, "/invoices/123", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+
+	resp, err := service.Do(req)
+	if err != nil {
+		t.Fatalf("Do returned error: %v", err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	if got, want := len(auditStore.records), 1; got != want {
+		t.Fatalf("audit record count mismatch: want %d, got %d", want, got)
+	}
+	if traceparent := auditStore.records[0].RequestHeaders["Traceparent"]; len(traceparent) != 1 || traceparent[0] == "" {
+		t.Fatalf("expected outbound traceparent header to be captured, got %#v", traceparent)
+	}
+}
+
+func TestServiceDoStripsProvidedTraceHeadersByDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Traceparent"); got != "" {
+			t.Fatalf("expected traceparent header to be stripped, got %q", got)
+		}
+		if got := r.Header.Get("Tracestate"); got != "" {
+			t.Fatalf("expected tracestate header to be stripped, got %q", got)
+		}
+		if got := r.Header.Get("Baggage"); got != "" {
+			t.Fatalf("expected baggage header to be stripped, got %q", got)
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	auditStore := &recordingAuditRepository{}
+	service, err := New(Config{
+		Client:          "billing",
+		BaseURL:         server.URL,
+		AuditRepository: auditStore,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	req, err := service.NewRequest(context.Background(), "get_invoice", http.MethodGet, "/invoices/123", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	req.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	req.Header.Set("Tracestate", "vendor=value")
+	req.Header.Set("Baggage", "foo=bar")
+
+	resp, err := service.Do(req)
+	if err != nil {
+		t.Fatalf("Do returned error: %v", err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	if got, want := len(auditStore.records), 1; got != want {
+		t.Fatalf("audit record count mismatch: want %d, got %d", want, got)
+	}
+	if got := filterHeaders(auditStore.records[0].RequestHeaders, "Traceparent", "Tracestate", "Baggage"); len(got) != 0 {
+		t.Fatalf("expected trace context headers to be absent from audit, got %#v", got)
+	}
+}
+
 func TestServiceDoRejectsAbsoluteURLsOutsideBaseOrigin(t *testing.T) {
 	service, err := New(Config{
 		Client:  "billing",
@@ -332,6 +435,78 @@ func TestServiceDoRejectsURLsWithUserInfo(t *testing.T) {
 	}
 	if diff := cmp.Diff("request URL must not include user info", err.Error()); diff != "" {
 		t.Fatalf("error mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRequestSpanContext(t *testing.T) {
+	contextTraceID, err := trace.TraceIDFromHex("11111111111111111111111111111111")
+	if err != nil {
+		t.Fatalf("TraceIDFromHex(context) returned error: %v", err)
+	}
+	contextSpanID, err := trace.SpanIDFromHex("2222222222222222")
+	if err != nil {
+		t.Fatalf("SpanIDFromHex(context) returned error: %v", err)
+	}
+	headerTraceID, err := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	if err != nil {
+		t.Fatalf("TraceIDFromHex(header) returned error: %v", err)
+	}
+	headerSpanID, err := trace.SpanIDFromHex("00f067aa0ba902b7")
+	if err != nil {
+		t.Fatalf("SpanIDFromHex(header) returned error: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		configureReq func(*http.Request) *http.Request
+		wantTraceID  string
+		wantSpanID   string
+	}{
+		{
+			name: "uses propagated traceparent header",
+			configureReq: func(req *http.Request) *http.Request {
+				req.Header.Set("Traceparent", "00-"+headerTraceID.String()+"-"+headerSpanID.String()+"-01")
+				ctx := trace.ContextWithSpanContext(req.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+					TraceID:    contextTraceID,
+					SpanID:     contextSpanID,
+					TraceFlags: trace.FlagsSampled,
+				}))
+				return req.WithContext(ctx)
+			},
+			wantTraceID: headerTraceID.String(),
+			wantSpanID:  headerSpanID.String(),
+		},
+		{
+			name: "falls back to request context",
+			configureReq: func(req *http.Request) *http.Request {
+				ctx := trace.ContextWithSpanContext(req.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+					TraceID:    contextTraceID,
+					SpanID:     contextSpanID,
+					TraceFlags: trace.FlagsSampled,
+				}))
+				return req.WithContext(ctx)
+			},
+			wantTraceID: contextTraceID.String(),
+			wantSpanID:  contextSpanID.String(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "https://billing.example/invoices/123", nil)
+			req = tt.configureReq(req)
+
+			spanContext := requestSpanContext(req)
+			if !spanContext.IsValid() {
+				t.Fatal("expected valid span context")
+			}
+			if diff := cmp.Diff(tt.wantTraceID, spanContext.TraceID().String()); diff != "" {
+				t.Fatalf("trace id mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tt.wantSpanID, spanContext.SpanID().String()); diff != "" {
+				t.Fatalf("span id mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

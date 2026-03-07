@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/publicroute"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
@@ -49,8 +52,10 @@ func (l loader) load() (Config, error) {
 	l.loadTimeouts(&cfg, &errList)
 	l.loadCORS(&cfg, &errList)
 	l.loadCSRF(&cfg, &errList)
+	l.loadClientIP(&cfg, &errList)
 	l.loadRequestAudit(&cfg, &errList)
 	l.loadRequestLogger(&cfg, &errList)
+	l.loadRateLimit(&cfg, &errList)
 	l.loadOTEL(&cfg, &errList)
 	l.loadWeather(&cfg, &errList)
 	l.loadDB(&cfg, &errList)
@@ -201,31 +206,17 @@ func (l loader) loadRequestAudit(cfg *Config, errList *[]error) {
 	} else if ok {
 		cfg.RequestAudit.Enabled = &value
 	}
+}
 
-	if value, ok, err := l.resolveString(keyAPIRequestAuditTrustedProxyCIDRs); err != nil {
+func (l loader) loadClientIP(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveString(keyAPITrustedProxyCIDRs); err != nil {
 		appendLoadError(errList, err)
 	} else if ok {
-		cidrs := splitAndTrimCSV(value)
-		trustedProxyCIDRs := make([]netip.Prefix, 0, len(cidrs))
-		seen := make(map[netip.Prefix]struct{}, len(cidrs))
-
-		for _, cidr := range cidrs {
-			parsed, parseErr := netip.ParsePrefix(cidr)
-			if parseErr != nil {
-				appendLoadError(errList, fmt.Errorf("invalid CIDR %q for %s", cidr, keyAPIRequestAuditTrustedProxyCIDRs))
-				continue
-			}
-
-			normalized := parsed.Masked()
-			if _, alreadySeen := seen[normalized]; alreadySeen {
-				continue
-			}
-
-			seen[normalized] = struct{}{}
-			trustedProxyCIDRs = append(trustedProxyCIDRs, normalized)
+		trustedProxyCIDRs, parseErrs := parseTrustedProxyCIDRs(value, keyAPITrustedProxyCIDRs)
+		for _, parseErr := range parseErrs {
+			appendLoadError(errList, parseErr)
 		}
-
-		cfg.RequestAudit.TrustedProxyCIDRs = trustedProxyCIDRs
+		cfg.ClientIP.TrustedProxyCIDRs = trustedProxyCIDRs
 	}
 }
 
@@ -234,6 +225,69 @@ func (l loader) loadRequestLogger(cfg *Config, errList *[]error) {
 		appendLoadError(errList, err)
 	} else if ok {
 		cfg.RequestLogger.Enabled = &value
+	}
+}
+
+func (l loader) loadRateLimit(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveBool(keyAPIRateLimitEnabled); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.Enabled = value
+	}
+
+	if value, ok, err := l.resolveBool(keyAPIRateLimitFailOpen); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.FailOpen = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyAPIRateLimitTimeout); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.Timeout = value
+	}
+
+	if value, ok, err := l.resolvePositiveFloat(keyAPIRateLimitDefaultRPS); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.DefaultPolicy.RequestsPerSecond = value
+	}
+
+	if value, ok, err := l.resolvePositiveInt(keyAPIRateLimitDefaultBurst); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.DefaultPolicy.Burst = value
+	}
+
+	if value, ok, err := l.resolveString(keyAPIRateLimitValkeyMode); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.Valkey.Mode = ratelimit.ValkeyMode(value)
+	}
+
+	if value, ok, err := l.resolveString(keyAPIRateLimitValkeyAddrs); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.Valkey.Addrs = splitAndTrimCSV(value)
+	}
+
+	if value, ok, err := l.resolveString(keyAPIRateLimitValkeyKeyPrefix); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.RateLimit.Valkey.KeyPrefix = value
+	}
+
+	if value, ok, err := l.resolveString(keyAPIRateLimitRouteOverridesJSON); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		routeOverrides, parseErr := parseRateLimitRouteOverrides(value)
+		if parseErr != nil {
+			appendLoadError(errList, fmt.Errorf("invalid %s: %w", keyAPIRateLimitRouteOverridesJSON, parseErr))
+		} else {
+			for route, override := range routeOverrides {
+				cfg.RateLimit.RouteOverrides[route] = override
+			}
+		}
 	}
 }
 
@@ -423,6 +477,10 @@ func validateConfig(cfg Config, errList *[]error) {
 		))
 	}
 
+	if cfg.RateLimit.IsEnabled() {
+		appendLoadError(errList, validateRateLimitConfig(cfg.RateLimit))
+	}
+
 	appendLoadError(errList, validateAddress(keyAPIAddr, cfg.Address))
 	appendLoadError(errList, validateAddress(keyAPIInfraAddr, cfg.InfraAddress))
 	if cfg.Weather.Enabled() {
@@ -460,6 +518,71 @@ func validateConfig(cfg Config, errList *[]error) {
 			cfg.DB.StartupBackoffMax,
 		))
 	}
+}
+
+func validateRateLimitConfig(cfg RateLimitConfig) error {
+	if err := cfg.DefaultPolicy.Validate(); err != nil {
+		return fmt.Errorf("invalid rate limit default policy: %w", err)
+	}
+	if err := cfg.Valkey.ValidateMode(); err != nil {
+		return fmt.Errorf("invalid %s=%q: %w", keyAPIRateLimitValkeyMode, cfg.Valkey.Mode, err)
+	}
+	if len(cfg.Valkey.Addrs) == 0 {
+		return fmt.Errorf("%s is enabled but %s is empty", keyAPIRateLimitEnabled, keyAPIRateLimitValkeyAddrs)
+	}
+	for _, addr := range cfg.Valkey.Addrs {
+		if err := validateAddress(keyAPIRateLimitValkeyAddrs, addr); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func parseRateLimitRouteOverrides(raw string) (map[string]ratelimit.RouteOverride, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+
+	routeOverrides := make(map[string]ratelimit.RouteOverride)
+	if err := decoder.Decode(&routeOverrides); err != nil {
+		return nil, err
+	}
+
+	for route, override := range routeOverrides {
+		if !publicroute.IsKnownOperationID(route) {
+			return nil, fmt.Errorf("unknown public operation ID %q (known: %s)", route, strings.Join(publicroute.KnownOperationIDs(), ", "))
+		}
+		if err := override.Validate(); err != nil {
+			return nil, fmt.Errorf("route %q: %w", route, err)
+		}
+	}
+
+	return routeOverrides, nil
+}
+
+func parseTrustedProxyCIDRs(raw, key string) ([]netip.Prefix, []error) {
+	cidrs := splitAndTrimCSV(raw)
+	trustedProxyCIDRs := make([]netip.Prefix, 0, len(cidrs))
+	seen := make(map[netip.Prefix]struct{}, len(cidrs))
+	errList := make([]error, 0)
+
+	for _, cidr := range cidrs {
+		parsed, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			errList = append(errList, fmt.Errorf("invalid CIDR %q for %s", cidr, key))
+			continue
+		}
+
+		normalized := parsed.Masked()
+		if _, alreadySeen := seen[normalized]; alreadySeen {
+			continue
+		}
+
+		seen[normalized] = struct{}{}
+		trustedProxyCIDRs = append(trustedProxyCIDRs, normalized)
+	}
+
+	return trustedProxyCIDRs, errList
 }
 
 func appendLoadError(errList *[]error, err error) {
@@ -564,6 +687,23 @@ func (l loader) resolveNonNegativeDuration(key string) (time.Duration, bool, err
 	return parsed, true, nil
 }
 
+func (l loader) resolvePositiveFloat(key string) (float64, bool, error) {
+	value, set, err := l.resolveString(key)
+	if err != nil || !set {
+		return 0, false, err
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return 0, false, fmt.Errorf("invalid float for %s=%q", key, value)
+	}
+	if parsed <= 0 {
+		return 0, false, fmt.Errorf("non-positive float for %s=%q", key, value)
+	}
+
+	return parsed, true, nil
+}
+
 func (l loader) resolveFloat(key string) (float64, bool, error) {
 	value, set, err := l.resolveString(key)
 	if err != nil || !set {
@@ -577,6 +717,23 @@ func (l loader) resolveFloat(key string) (float64, bool, error) {
 
 	if parsed < 0 || parsed > 1 {
 		return 0, false, fmt.Errorf("out-of-range float for %s=%q, expected value between 0 and 1 inclusive", key, value)
+	}
+
+	return parsed, true, nil
+}
+
+func (l loader) resolvePositiveInt(key string) (int, bool, error) {
+	value, set, err := l.resolveString(key)
+	if err != nil || !set {
+		return 0, false, err
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid integer for %s=%q", key, value)
+	}
+	if parsed <= 0 {
+		return 0, false, fmt.Errorf("non-positive integer for %s=%d", key, parsed)
 	}
 
 	return parsed, true, nil

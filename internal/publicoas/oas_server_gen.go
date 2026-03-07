@@ -25,7 +25,7 @@ type BaseHandler interface {
 	// Public health endpoint.
 	//
 	// GET /healthz
-	GetHealthz(ctx context.Context) (*HealthResponseHeaders, error)
+	GetHealthz(ctx context.Context) (GetHealthzRes, error)
 }
 
 // WeatherHandler handles operations described by OpenAPI v3 specification.
@@ -37,7 +37,7 @@ type WeatherHandler interface {
 	// Current weather for a location.
 	//
 	// GET /weather/current
-	GetCurrentWeather(ctx context.Context, params GetCurrentWeatherParams) (*CurrentWeatherResponseHeaders, error)
+	GetCurrentWeather(ctx context.Context, params GetCurrentWeatherParams) (GetCurrentWeatherRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

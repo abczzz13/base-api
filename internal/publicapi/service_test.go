@@ -37,7 +37,12 @@ func TestBaseServiceGetHealthz(t *testing.T) {
 				t.Fatalf("GetHealthz returned error: %v", err)
 			}
 
-			if diff := cmp.Diff(tt.want, got); diff != "" {
+			gotResp, ok := got.(*publicoas.HealthResponseHeaders)
+			if !ok {
+				t.Fatalf("GetHealthz response type mismatch: got %T", got)
+			}
+
+			if diff := cmp.Diff(tt.want, gotResp); diff != "" {
 				t.Fatalf("GetHealthz mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -130,11 +135,15 @@ func TestBaseServiceGetCurrentWeather(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := publicapi.NewService(config.Config{}, tt.weatherClient)
-			gotResp, err := svc.GetCurrentWeather(tt.ctx, tt.params)
+			got, err := svc.GetCurrentWeather(tt.ctx, tt.params)
 
 			if tt.wantErr == nil {
 				if err != nil {
 					t.Fatalf("GetCurrentWeather returned unexpected error: %v", err)
+				}
+				gotResp, ok := got.(*publicoas.CurrentWeatherResponseHeaders)
+				if !ok {
+					t.Fatalf("GetCurrentWeather response type mismatch: got %T", got)
 				}
 				if diff := cmp.Diff(tt.wantResp, gotResp); diff != "" {
 					t.Fatalf("GetCurrentWeather response mismatch (-want +got):\n%s", diff)
@@ -142,8 +151,8 @@ func TestBaseServiceGetCurrentWeather(t *testing.T) {
 				return
 			}
 
-			if gotResp != nil {
-				t.Fatalf("GetCurrentWeather response mismatch (-want +got):\n%s", cmp.Diff((*publicoas.CurrentWeatherResponseHeaders)(nil), gotResp))
+			if got != nil {
+				t.Fatalf("GetCurrentWeather response mismatch (-want +got):\n%s", cmp.Diff((*publicoas.CurrentWeatherResponseHeaders)(nil), got))
 			}
 
 			var gotErr *publicoas.DefaultErrorStatusCodeWithHeaders

@@ -96,6 +96,8 @@ func (s *CurrentWeatherResponseHeaders) SetResponse(val CurrentWeatherResponse) 
 	s.Response = val
 }
 
+func (*CurrentWeatherResponseHeaders) getCurrentWeatherRes() {}
+
 // DefaultErrorStatusCodeWithHeaders wraps ErrorResponse with status code and response headers.
 type DefaultErrorStatusCodeWithHeaders struct {
 	StatusCode int
@@ -211,6 +213,8 @@ func (s *HealthResponseHeaders) SetResponse(val HealthResponse) {
 	s.Response = val
 }
 
+func (*HealthResponseHeaders) getHealthzRes() {}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -256,3 +260,94 @@ func (o OptString) Or(d string) string {
 	}
 	return d
 }
+
+// ServiceUnavailableErrorHeaders wraps ErrorResponse with response headers.
+type ServiceUnavailableErrorHeaders struct {
+	XRequestID OptString
+	Response   ErrorResponse
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *ServiceUnavailableErrorHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *ServiceUnavailableErrorHeaders) GetResponse() ErrorResponse {
+	return s.Response
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *ServiceUnavailableErrorHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ServiceUnavailableErrorHeaders) SetResponse(val ErrorResponse) {
+	s.Response = val
+}
+
+func (*ServiceUnavailableErrorHeaders) getCurrentWeatherRes() {}
+func (*ServiceUnavailableErrorHeaders) getHealthzRes()        {}
+
+// TooManyRequestsErrorHeaders wraps ErrorResponse with response headers.
+type TooManyRequestsErrorHeaders struct {
+	Ratelimit       OptString
+	RatelimitPolicy OptString
+	RetryAfter      OptString
+	XRequestID      OptString
+	Response        ErrorResponse
+}
+
+// GetRatelimit returns the value of Ratelimit.
+func (s *TooManyRequestsErrorHeaders) GetRatelimit() OptString {
+	return s.Ratelimit
+}
+
+// GetRatelimitPolicy returns the value of RatelimitPolicy.
+func (s *TooManyRequestsErrorHeaders) GetRatelimitPolicy() OptString {
+	return s.RatelimitPolicy
+}
+
+// GetRetryAfter returns the value of RetryAfter.
+func (s *TooManyRequestsErrorHeaders) GetRetryAfter() OptString {
+	return s.RetryAfter
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *TooManyRequestsErrorHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *TooManyRequestsErrorHeaders) GetResponse() ErrorResponse {
+	return s.Response
+}
+
+// SetRatelimit sets the value of Ratelimit.
+func (s *TooManyRequestsErrorHeaders) SetRatelimit(val OptString) {
+	s.Ratelimit = val
+}
+
+// SetRatelimitPolicy sets the value of RatelimitPolicy.
+func (s *TooManyRequestsErrorHeaders) SetRatelimitPolicy(val OptString) {
+	s.RatelimitPolicy = val
+}
+
+// SetRetryAfter sets the value of RetryAfter.
+func (s *TooManyRequestsErrorHeaders) SetRetryAfter(val OptString) {
+	s.RetryAfter = val
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *TooManyRequestsErrorHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *TooManyRequestsErrorHeaders) SetResponse(val ErrorResponse) {
+	s.Response = val
+}
+
+func (*TooManyRequestsErrorHeaders) getCurrentWeatherRes() {}
+func (*TooManyRequestsErrorHeaders) getHealthzRes()        {}

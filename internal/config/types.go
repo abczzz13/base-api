@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
@@ -56,6 +57,10 @@ func (c RequestLoggerConfig) IsEnabled() bool {
 	return *c.Enabled
 }
 
+type ClientIPConfig struct {
+	TrustedProxyCIDRs []netip.Prefix
+}
+
 type WeatherConfig struct {
 	IntegrationEnabled bool
 	GeocodingBaseURL   string
@@ -66,6 +71,19 @@ type WeatherConfig struct {
 
 func (c WeatherConfig) Enabled() bool {
 	return c.IntegrationEnabled
+}
+
+type RateLimitConfig struct {
+	Enabled        bool
+	FailOpen       bool
+	Timeout        time.Duration
+	DefaultPolicy  ratelimit.Policy
+	RouteOverrides map[string]ratelimit.RouteOverride
+	Valkey         ratelimit.ValkeyConfig
+}
+
+func (c RateLimitConfig) IsEnabled() bool {
+	return c.Enabled
 }
 
 type DBConfig struct {
@@ -110,8 +128,10 @@ type Config struct {
 	IdleTimeout       time.Duration
 	CORS              CORSConfig
 	CSRF              CSRFConfig
+	ClientIP          ClientIPConfig
 	RequestAudit      RequestAuditConfig
 	RequestLogger     RequestLoggerConfig
+	RateLimit         RateLimitConfig
 	OTEL              OTELConfig
 	Weather           WeatherConfig
 	DB                DBConfig

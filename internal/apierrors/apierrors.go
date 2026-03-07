@@ -22,6 +22,12 @@ type Error struct {
 	RequestID  string
 }
 
+type TooManyRequestsHeaders struct {
+	RetryAfter      string
+	RateLimit       string
+	RateLimitPolicy string
+}
+
 // New constructs a canonical API error.
 func New(statusCode int, code, message string) Error {
 	return Error{
@@ -53,6 +59,43 @@ func (e Error) OASDefault() *publicoas.DefaultErrorStatusCodeWithHeaders {
 	response := &publicoas.DefaultErrorStatusCodeWithHeaders{
 		StatusCode: e.StatusCode,
 		Response:   e.oasResponse(),
+	}
+	if e.RequestID != "" {
+		response.XRequestID = publicoas.NewOptString(e.RequestID)
+	}
+
+	return response
+}
+
+// OASTooManyRequests converts Error into the explicit public API 429 wrapper.
+func (e Error) OASTooManyRequests(headers TooManyRequestsHeaders) *publicoas.TooManyRequestsErrorHeaders {
+	e = e.normalize()
+
+	response := &publicoas.TooManyRequestsErrorHeaders{
+		Response: e.oasResponse(),
+	}
+	if e.RequestID != "" {
+		response.XRequestID = publicoas.NewOptString(e.RequestID)
+	}
+	if headers.RetryAfter != "" {
+		response.RetryAfter = publicoas.NewOptString(headers.RetryAfter)
+	}
+	if headers.RateLimit != "" {
+		response.Ratelimit = publicoas.NewOptString(headers.RateLimit)
+	}
+	if headers.RateLimitPolicy != "" {
+		response.RatelimitPolicy = publicoas.NewOptString(headers.RateLimitPolicy)
+	}
+
+	return response
+}
+
+// OASServiceUnavailable converts Error into the explicit public API 503 wrapper.
+func (e Error) OASServiceUnavailable() *publicoas.ServiceUnavailableErrorHeaders {
+	e = e.normalize()
+
+	response := &publicoas.ServiceUnavailableErrorHeaders{
+		Response: e.oasResponse(),
 	}
 	if e.RequestID != "" {
 		response.XRequestID = publicoas.NewOptString(e.RequestID)
@@ -100,6 +143,31 @@ func (e Error) Write(w http.ResponseWriter) {
 // WriteContext writes a spec-compliant error response enriched from ctx.
 func (e Error) WriteContext(ctx context.Context, w http.ResponseWriter) {
 	e.WithContext(ctx).Write(w)
+}
+
+// WritePublicTooManyRequests writes the explicit public API 429 response.
+func (e Error) WritePublicTooManyRequests(w http.ResponseWriter, headers TooManyRequestsHeaders) {
+	e = e.normalize()
+	response := e.oasResponse()
+	if err := writePublicErrorResponse(w, http.StatusTooManyRequests, response, publicErrorHeaders{
+		RequestID:       e.RequestID,
+		RetryAfter:      headers.RetryAfter,
+		RateLimit:       headers.RateLimit,
+		RateLimitPolicy: headers.RateLimitPolicy,
+	}); err != nil {
+		e.Write(w)
+	}
+}
+
+// WritePublicServiceUnavailable writes the explicit public API 503 response.
+func (e Error) WritePublicServiceUnavailable(w http.ResponseWriter) {
+	e = e.normalize()
+	response := e.oasResponse()
+	if err := writePublicErrorResponse(w, http.StatusServiceUnavailable, response, publicErrorHeaders{
+		RequestID: e.RequestID,
+	}); err != nil {
+		e.Write(w)
+	}
 }
 
 // WriteError writes a spec-compliant error response to the ResponseWriter.
@@ -155,6 +223,38 @@ func (e Error) infraOASResponse() infraoas.ErrorResponse {
 	}
 
 	return response
+}
+
+type publicErrorHeaders struct {
+	RequestID       string
+	RetryAfter      string
+	RateLimit       string
+	RateLimitPolicy string
+}
+
+func writePublicErrorResponse(w http.ResponseWriter, statusCode int, response publicoas.ErrorResponse, headers publicErrorHeaders) error {
+	body, err := response.MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", contentTypeJSON)
+	if headers.RequestID != "" {
+		w.Header().Set(requestid.HeaderName, headers.RequestID)
+	}
+	if headers.RetryAfter != "" {
+		w.Header().Set("Retry-After", headers.RetryAfter)
+	}
+	if headers.RateLimit != "" {
+		w.Header().Set("RateLimit", headers.RateLimit)
+	}
+	if headers.RateLimitPolicy != "" {
+		w.Header().Set("RateLimit-Policy", headers.RateLimitPolicy)
+	}
+	w.WriteHeader(statusCode)
+	_, _ = w.Write(body)
+
+	return nil
 }
 
 func statusCodeToCodeMessage(statusCode int) (code, message string) {

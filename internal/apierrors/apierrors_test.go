@@ -94,6 +94,76 @@ func TestWriteMatchesPublicGeneratedErrorEncoding(t *testing.T) {
 	}
 }
 
+func TestWritePublicTooManyRequestsMatchesGeneratedEncoding(t *testing.T) {
+	apiErr := New(http.StatusTooManyRequests, "too_many_requests", "rate limit exceeded").WithRequestID("req-123")
+	headers := TooManyRequestsHeaders{
+		RetryAfter:      "2",
+		RateLimit:       `"default";r=0;t=2`,
+		RateLimitPolicy: `"default";q=2;w=2`,
+	}
+
+	actual := httptest.NewRecorder()
+	apiErr.WritePublicTooManyRequests(actual, headers)
+
+	expected := httptest.NewRecorder()
+	server, err := publicoas.NewServer(publicExplicitErrorHandler{healthz: apiErr.OASTooManyRequests(headers)})
+	if err != nil {
+		t.Fatalf("create public oas server: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	server.ServeHTTP(expected, req)
+
+	if diff := cmp.Diff(expected.Code, actual.Code); diff != "" {
+		t.Fatalf("status mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get("Content-Type"), actual.Header().Get("Content-Type")); diff != "" {
+		t.Fatalf("content type mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get(requestid.HeaderName), actual.Header().Get(requestid.HeaderName)); diff != "" {
+		t.Fatalf("request ID header mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get("Retry-After"), actual.Header().Get("Retry-After")); diff != "" {
+		t.Fatalf("Retry-After mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get("RateLimit"), actual.Header().Get("RateLimit")); diff != "" {
+		t.Fatalf("RateLimit mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get("RateLimit-Policy"), actual.Header().Get("RateLimit-Policy")); diff != "" {
+		t.Fatalf("RateLimit-Policy mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Body.String(), actual.Body.String()); diff != "" {
+		t.Fatalf("body mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestWritePublicServiceUnavailableMatchesGeneratedEncoding(t *testing.T) {
+	apiErr := New(http.StatusServiceUnavailable, "rate_limit_unavailable", "rate limit backend unavailable").WithRequestID("req-123")
+
+	actual := httptest.NewRecorder()
+	apiErr.WritePublicServiceUnavailable(actual)
+
+	expected := httptest.NewRecorder()
+	server, err := publicoas.NewServer(publicExplicitErrorHandler{healthz: apiErr.OASServiceUnavailable()})
+	if err != nil {
+		t.Fatalf("create public oas server: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	server.ServeHTTP(expected, req)
+
+	if diff := cmp.Diff(expected.Code, actual.Code); diff != "" {
+		t.Fatalf("status mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get("Content-Type"), actual.Header().Get("Content-Type")); diff != "" {
+		t.Fatalf("content type mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Header().Get(requestid.HeaderName), actual.Header().Get(requestid.HeaderName)); diff != "" {
+		t.Fatalf("request ID header mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expected.Body.String(), actual.Body.String()); diff != "" {
+		t.Fatalf("body mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestWriteMatchesInfraGeneratedErrorEncoding(t *testing.T) {
 	apiErr := New(http.StatusServiceUnavailable, "not_ready", "service is not ready").WithRequestID("req-123")
 
@@ -187,11 +257,27 @@ type publicErrorHandler struct {
 	err *publicoas.DefaultErrorStatusCodeWithHeaders
 }
 
-func (h publicErrorHandler) GetHealthz(context.Context) (*publicoas.HealthResponseHeaders, error) {
+type publicExplicitErrorHandler struct {
+	healthz publicoas.GetHealthzRes
+}
+
+func (h publicExplicitErrorHandler) GetHealthz(context.Context) (publicoas.GetHealthzRes, error) {
+	return h.healthz, nil
+}
+
+func (h publicExplicitErrorHandler) GetCurrentWeather(context.Context, publicoas.GetCurrentWeatherParams) (publicoas.GetCurrentWeatherRes, error) {
+	return &publicoas.CurrentWeatherResponseHeaders{Response: publicoas.CurrentWeatherResponse{}}, nil
+}
+
+func (h publicExplicitErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCodeWithHeaders {
+	return New(http.StatusInternalServerError, "internal_error", "internal server error").OASDefault()
+}
+
+func (h publicErrorHandler) GetHealthz(context.Context) (publicoas.GetHealthzRes, error) {
 	return nil, h.err
 }
 
-func (h publicErrorHandler) GetCurrentWeather(context.Context, publicoas.GetCurrentWeatherParams) (*publicoas.CurrentWeatherResponseHeaders, error) {
+func (h publicErrorHandler) GetCurrentWeather(context.Context, publicoas.GetCurrentWeatherParams) (publicoas.GetCurrentWeatherRes, error) {
 	return nil, h.err
 }
 

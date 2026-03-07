@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -15,7 +13,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/abczzz13/clientip"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/abczzz13/base-api/internal/requestaudit"
@@ -56,6 +53,7 @@ var (
 )
 
 type RequestAuditConfig struct {
+	ClientIPResolver  *ClientIPResolver
 	Store             requestaudit.Repository
 	Server            string
 	RouteLabel        func(*http.Request) string
@@ -89,13 +87,15 @@ func RequestAudit(cfg RequestAuditConfig) func(http.Handler) http.Handler {
 		writeTimeout = requestAuditDefaultWriteTimeout
 	}
 
-	clientIPExtractor, err := newRequestAuditClientIPExtractor(cfg.TrustedProxyCIDRs)
-	if err != nil {
-		slog.Warn("request audit client IP extractor initialization failed", slog.Any("error", err))
+	clientIPResolver := cfg.ClientIPResolver
+	if clientIPResolver == nil {
+		clientIPResolver = NewClientIPResolver("request audit", cfg.TrustedProxyCIDRs)
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r, _ = clientIPResolver.ResolveStrict(r)
+
 			nextWriter, observedRW := ensureObservedResponseWriter(w)
 			responseBodyCapture := newBodyCaptureResponseWriter(nextWriter, maxBodyBytes)
 
@@ -116,7 +116,6 @@ func RequestAudit(cfg RequestAuditConfig) func(http.Handler) http.Handler {
 					statusCode:           observedRW.statusCode,
 					duration:             time.Since(startedAt),
 					responseSizeBytes:    observedRW.bytesWritten,
-					clientIPExtractor:    clientIPExtractor,
 					requestBodyCapture:   requestBodyCapture,
 					responseBodyCapture:  responseBodyCapture,
 					responseHeaderSource: responseBodyCapture.Header(),
@@ -143,7 +142,6 @@ type requestAuditRecordInputs struct {
 	statusCode           int
 	duration             time.Duration
 	responseSizeBytes    int64
-	clientIPExtractor    *clientip.Extractor
 	requestBodyCapture   *requestAuditBodyCaptureReadCloser
 	responseBodyCapture  *bodyCaptureResponseWriter
 	responseHeaderSource http.Header
@@ -164,7 +162,7 @@ func requestAuditRecordFromRequest(r *http.Request, inputs requestAuditRecordInp
 		RequestSizeBytes:      requestAuditRequestSizeBytes(r, inputs.requestBodyCapture),
 		ResponseSizeBytes:     requestAuditNonNegativeSize(inputs.responseSizeBytes),
 		RemoteAddr:            requestAuditRemoteAddr(r),
-		ClientIP:              requestAuditClientIP(r, inputs.clientIPExtractor),
+		ClientIP:              requestAuditClientIP(r),
 		UserAgent:             requestAuditUserAgent(r),
 		RequestHeaders:        requestAuditRedactHeaders(requestAuditHeaders(r)),
 		ResponseHeaders:       requestAuditRedactHeaders(inputs.responseHeaderSource),
@@ -310,63 +308,12 @@ func requestAuditRemoteAddr(r *http.Request) string {
 	return strings.TrimSpace(r.RemoteAddr)
 }
 
-func requestAuditClientIP(r *http.Request, extractor *clientip.Extractor) string {
-	if r == nil {
-		return ""
+func requestAuditClientIP(r *http.Request) string {
+	if clientIP, ok := strictClientIPFromContext(requestContextOrBackground(r)); ok {
+		return clientIP
 	}
 
-	if extractor == nil {
-		return requestAuditRemoteClientIP(r)
-	}
-
-	extractedIP, err := extractor.ExtractAddr(r)
-	if err != nil {
-		return ""
-	}
-
-	return extractedIP.String()
-}
-
-func requestAuditRemoteClientIP(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-
-	remoteAddr := requestAuditRemoteAddr(r)
-	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		if parsed := net.ParseIP(host); parsed != nil {
-			return parsed.String()
-		}
-
-		return host
-	}
-
-	if parsed := net.ParseIP(remoteAddr); parsed != nil {
-		return parsed.String()
-	}
-
-	return remoteAddr
-}
-
-func newRequestAuditClientIPExtractor(trustedProxyCIDRs []netip.Prefix) (*clientip.Extractor, error) {
-	opts := []clientip.Option{
-		clientip.Priority(clientip.SourceXForwardedFor, clientip.SourceRemoteAddr),
-		clientip.WithSecurityMode(clientip.SecurityModeStrict),
-		clientip.AllowPrivateIPs(true),
-	}
-
-	if len(trustedProxyCIDRs) == 0 {
-		opts = append([]clientip.Option{clientip.TrustLocalProxyDefaults()}, opts...)
-	} else {
-		opts = append([]clientip.Option{clientip.TrustProxyPrefixes(trustedProxyCIDRs...)}, opts...)
-	}
-
-	extractor, err := clientip.New(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("initialize client IP extractor: %w", err)
-	}
-
-	return extractor, nil
+	return ""
 }
 
 func requestAuditUserAgent(r *http.Request) string {

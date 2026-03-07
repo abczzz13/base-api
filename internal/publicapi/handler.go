@@ -8,6 +8,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/weather"
 )
@@ -16,6 +17,7 @@ import (
 type Dependencies struct {
 	RequestMetrics         *middleware.HTTPRequestMetrics
 	RequestAuditRepository requestaudit.Repository
+	RateLimiter            ratelimit.Store
 	WeatherClient          weather.Client
 }
 
@@ -26,6 +28,10 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 	}
 
 	baseService := NewService(cfg, deps.WeatherClient)
+	var clientIPResolver *middleware.ClientIPResolver
+	if cfg.RequestAudit.IsEnabled() || cfg.RateLimit.IsEnabled() {
+		clientIPResolver = middleware.NewClientIPResolver("public handler", cfg.ClientIP.TrustedProxyCIDRs)
+	}
 
 	serverOptions := []publicoas.ServerOption{publicoas.WithErrorHandler(apierrors.OgenErrorHandler)}
 	if cfg.OTEL.TracingEnabled {
@@ -62,10 +68,11 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 
 		middlewares = append(middlewares,
 			middleware.RequestAudit(middleware.RequestAuditConfig{
+				ClientIPResolver:  clientIPResolver,
 				Store:             deps.RequestAuditRepository,
 				Server:            "public",
 				RouteLabel:        routeLabel,
-				TrustedProxyCIDRs: cfg.RequestAudit.TrustedProxyCIDRs,
+				TrustedProxyCIDRs: cfg.ClientIP.TrustedProxyCIDRs,
 			}),
 		)
 	}
@@ -85,6 +92,24 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 			MaxAge:           cfg.CORS.MaxAge,
 		}),
 	)
+
+	if cfg.RateLimit.IsEnabled() {
+		if deps.RateLimiter == nil {
+			return nil, errors.New("rate limiter dependency is required")
+		}
+
+		middlewares = append(middlewares, middleware.RateLimit(middleware.RateLimitConfig{
+			ClientIPResolver:  clientIPResolver,
+			Store:             deps.RateLimiter,
+			Server:            "public",
+			RouteLabel:        routeLabel,
+			BackendTimeout:    cfg.RateLimit.Timeout,
+			FailOpen:          cfg.RateLimit.FailOpen,
+			DefaultPolicy:     cfg.RateLimit.DefaultPolicy,
+			RouteOverrides:    cfg.RateLimit.RouteOverrides,
+			TrustedProxyCIDRs: cfg.ClientIP.TrustedProxyCIDRs,
+		}))
+	}
 
 	chain := middleware.NewChain(middlewares...)
 

@@ -27,9 +27,19 @@ const (
 	keyAPICSRFTrustedOrigins = "API_CSRF_TRUSTED_ORIGINS"
 	keyAPICSRFEnabled        = "API_CSRF_ENABLED"
 
-	keyAPIRequestAuditEnabled           = "API_REQUEST_AUDIT_ENABLED"
-	keyAPIRequestAuditTrustedProxyCIDRs = "API_REQUEST_AUDIT_TRUSTED_PROXY_CIDRS"
-	keyAPIRequestLoggerEnabled          = "API_REQUEST_LOGGER_ENABLED"
+	keyAPITrustedProxyCIDRs = "API_TRUSTED_PROXY_CIDRS"
+
+	keyAPIRequestAuditEnabled         = "API_REQUEST_AUDIT_ENABLED"
+	keyAPIRequestLoggerEnabled        = "API_REQUEST_LOGGER_ENABLED"
+	keyAPIRateLimitEnabled            = "API_RATE_LIMIT_ENABLED"
+	keyAPIRateLimitFailOpen           = "API_RATE_LIMIT_FAIL_OPEN"
+	keyAPIRateLimitTimeout            = "API_RATE_LIMIT_TIMEOUT"
+	keyAPIRateLimitDefaultRPS         = "API_RATE_LIMIT_DEFAULT_RPS"
+	keyAPIRateLimitDefaultBurst       = "API_RATE_LIMIT_DEFAULT_BURST"
+	keyAPIRateLimitRouteOverridesJSON = "API_RATE_LIMIT_ROUTE_OVERRIDES_JSON"
+	keyAPIRateLimitValkeyMode         = "API_RATE_LIMIT_VALKEY_MODE"
+	keyAPIRateLimitValkeyAddrs        = "API_RATE_LIMIT_VALKEY_ADDRS"
+	keyAPIRateLimitValkeyKeyPrefix    = "API_RATE_LIMIT_VALKEY_KEY_PREFIX"
 
 	keyOTELServiceName                = "OTEL_SERVICE_NAME"
 	keyOTELSDKDisabled                = "OTEL_SDK_DISABLED"

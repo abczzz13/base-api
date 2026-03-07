@@ -15,6 +15,7 @@ import (
 
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 )
 
@@ -120,8 +121,21 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 			Enabled:        true,
 			TrustedOrigins: []string{"https://client.example"},
 		},
-		RequestAudit: config.RequestAuditConfig{
+		ClientIP: config.ClientIPConfig{
 			TrustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+		},
+		RateLimit: config.RateLimitConfig{
+			Enabled:  true,
+			FailOpen: true,
+			Timeout:  100 * time.Millisecond,
+			Valkey:   ratelimit.ValkeyConfig{Mode: ratelimit.ValkeyModeCluster, Addrs: []string{"valkey-a.internal:6379", "valkey-b.internal:6379"}},
+			DefaultPolicy: ratelimit.Policy{
+				RequestsPerSecond: 7.5,
+				Burst:             11,
+			},
+			RouteOverrides: map[string]ratelimit.RouteOverride{
+				"getHealthz": {Disabled: true},
+			},
 		},
 		OTEL: config.OTELConfig{
 			TracingEnabled:   true,
@@ -159,16 +173,24 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 	}
 
 	for key, want := range map[string]any{
-		"request_logger_enabled":                  true,
-		"request_audit_enabled":                   true,
-		"weather_enabled":                         true,
-		"request_audit_client_ip_security_mode":   "strict",
-		"request_audit_client_ip_priority":        "x_forwarded_for,remote_addr",
-		"request_audit_trusted_proxy_source":      "configured",
-		"request_audit_trusted_proxy_cidrs_count": float64(1),
-		"cors_allowed_origins_count":              float64(2),
-		"csrf_trusted_origins_count":              float64(1),
-		"tracing_sampler":                         string(telemetry.TraceSamplerTraceIDRatio),
+		"request_logger_enabled":              true,
+		"rate_limit_enabled":                  true,
+		"rate_limit_fail_open":                true,
+		"rate_limit_timeout":                  float64((100 * time.Millisecond).Nanoseconds()),
+		"rate_limit_default_rps":              7.5,
+		"rate_limit_default_burst":            float64(11),
+		"rate_limit_valkey_mode":              string(ratelimit.ValkeyModeCluster),
+		"rate_limit_valkey_addrs_count":       float64(2),
+		"rate_limit_route_overrides_count":    float64(1),
+		"request_audit_enabled":               true,
+		"weather_enabled":                     true,
+		"client_ip_security_mode":             "strict",
+		"client_ip_priority":                  "x_forwarded_for,remote_addr",
+		"client_ip_trusted_proxy_source":      "configured",
+		"client_ip_trusted_proxy_cidrs_count": float64(1),
+		"cors_allowed_origins_count":          float64(2),
+		"csrf_trusted_origins_count":          float64(1),
+		"tracing_sampler":                     string(telemetry.TraceSamplerTraceIDRatio),
 	} {
 		if got := entry[key]; got != want {
 			t.Fatalf("field %q mismatch: want %#v, got %#v", key, want, got)

@@ -70,6 +70,15 @@ compose-build: env-init
 db-start: env-init
     {{docker_compose}} up -d postgres
 
+valkey-start: env-init
+    {{docker_compose}} up -d valkey
+
+services: env-init
+    {{docker_compose}} up -d postgres valkey
+
+services-down: env-init
+    {{docker_compose}} stop postgres valkey
+
 build-go:
     go build {{go_mod_mode}} ./...
 

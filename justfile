@@ -147,6 +147,7 @@ db-create name:
     [ -x "{{goose}}" ] || { printf 'Missing required tool: {{goose}}\nInstall with: just tools\n'; exit 1; }
     {{goose}} -dir {{db_migrations_dir}} create {{name}} sql
 
+[script]
 sqlc-generate:
     sqlc_cmd=()
     if [ -x "{{sqlc}}" ]; then sqlc_cmd=("{{sqlc}}"); else sqlc_cmd=(docker run --rm -v "${PWD}:/src" -w /src "{{sqlc_docker_image}}"); fi

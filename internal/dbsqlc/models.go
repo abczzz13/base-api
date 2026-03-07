@@ -10,6 +10,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type HttpClientAudit struct {
+	ID                    int64              `json:"id"`
+	Client                string             `json:"client"`
+	Operation             string             `json:"operation"`
+	Method                string             `json:"method"`
+	Path                  string             `json:"path"`
+	Query                 string             `json:"query"`
+	Host                  string             `json:"host"`
+	Scheme                string             `json:"scheme"`
+	StatusCode            int32              `json:"status_code"`
+	DurationMs            int64              `json:"duration_ms"`
+	RequestSizeBytes      int64              `json:"request_size_bytes"`
+	ResponseSizeBytes     int64              `json:"response_size_bytes"`
+	RequestHeaders        []byte             `json:"request_headers"`
+	ResponseHeaders       []byte             `json:"response_headers"`
+	RequestBody           []byte             `json:"request_body"`
+	ResponseBody          []byte             `json:"response_body"`
+	RequestBodyTruncated  bool               `json:"request_body_truncated"`
+	ResponseBodyTruncated bool               `json:"response_body_truncated"`
+	ErrorKind             string             `json:"error_kind"`
+	ErrorMessage          string             `json:"error_message"`
+	TraceID               string             `json:"trace_id"`
+	SpanID                string             `json:"span_id"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
 type HttpRequestAudit struct {
 	ID                    int64              `json:"id"`
 	Server                string             `json:"server"`

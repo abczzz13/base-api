@@ -10,6 +10,7 @@ import (
 
 type Querier interface {
 	DatabasePing(ctx context.Context) (int32, error)
+	InsertHTTPClientAudit(ctx context.Context, arg InsertHTTPClientAuditParams) error
 	InsertHTTPRequestAudit(ctx context.Context, arg InsertHTTPRequestAuditParams) error
 }
 

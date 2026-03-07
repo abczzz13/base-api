@@ -9,6 +9,7 @@ import (
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
 	BaseHandler
+	WeatherHandler
 	// NewError creates *DefaultErrorStatusCodeWithHeaders from error returned by handler.
 	//
 	// Used for common default response.
@@ -25,6 +26,18 @@ type BaseHandler interface {
 	//
 	// GET /healthz
 	GetHealthz(ctx context.Context) (*HealthResponseHeaders, error)
+}
+
+// WeatherHandler handles operations described by OpenAPI v3 specification.
+//
+// x-ogen-operation-group: Weather
+type WeatherHandler interface {
+	// GetCurrentWeather implements getCurrentWeather operation.
+	//
+	// Current weather for a location.
+	//
+	// GET /weather/current
+	GetCurrentWeather(ctx context.Context, params GetCurrentWeatherParams) (*CurrentWeatherResponseHeaders, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

@@ -1,15 +1,18 @@
 package publicapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
+	"github.com/abczzz13/base-api/internal/weather"
 
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/publicapi"
@@ -17,7 +20,15 @@ import (
 )
 
 func TestGeneratedRoutersBehavior(t *testing.T) {
-	publicHandler, err := publicoas.NewServer(publicapi.NewService(config.Config{Environment: "test"}))
+	publicHandler, err := publicoas.NewServer(publicapi.NewService(config.Config{Environment: "test"}, weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+		return weather.CurrentWeather{
+			Provider:     "open-meteo",
+			Location:     "Amsterdam",
+			Condition:    "Cloudy",
+			TemperatureC: 12.5,
+			ObservedAt:   time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC),
+		}, nil
+	})))
 	if err != nil {
 		t.Fatalf("create public server: %v", err)
 	}
@@ -53,6 +64,23 @@ func TestGeneratedRoutersBehavior(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/metrics",
 			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "public weather endpoint returns current conditions",
+			handler:    publicHandler,
+			method:     http.MethodGet,
+			path:       "/weather/current?location=Amsterdam",
+			wantStatus: http.StatusOK,
+			wantHeaders: map[string]string{
+				"Content-Type": "application/json; charset=utf-8",
+			},
+			wantJSON: map[string]any{
+				"provider":     "open-meteo",
+				"location":     "Amsterdam",
+				"condition":    "Cloudy",
+				"temperatureC": 12.5,
+				"observedAt":   "2026-03-07T12:00:00Z",
+			},
 		},
 		{
 			name:       "infra liveness endpoint returns safe payload",

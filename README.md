@@ -19,6 +19,7 @@ The goal is to give new services a clean, idiomatic starting point with strong d
 - Strict env-based configuration with `<KEY>_FILE` support
 - Request IDs propagated through logs, errors, and audit records
 - Request and outbound HTTP audit persistence in PostgreSQL
+- An opt-in outbound weather integration example built on `internal/outboundhttp`
 - Reproducible code generation checks for `ogen` and `sqlc`
 - Distroless container image and hardened compose setup
 - CI quality gates for formatting, linting, tests, vuln scanning, and secret scanning
@@ -36,6 +37,7 @@ The runtime is intentionally small at the entrypoint and explicit at the composi
 - `internal/postgres`: database runtime setup, migrations, and metrics
 - `internal/requestaudit` and `internal/outboundaudit`: audit persistence
 - `internal/outboundhttp`: reusable instrumented outbound HTTP client
+- `internal/weather`: example typed outbound integration
 
 Request flow is:
 
@@ -44,6 +46,9 @@ Request flow is:
 3. generated `ogen` router dispatches to handwritten service code
 4. errors are encoded to a shared schema and include `requestId`
 5. request metadata is correlated in logs, traces, and audit records
+
+The template includes one concrete outbound example: `GET /weather/current?location=...`, backed by Open-Meteo geocoding and forecast APIs.
+When `WEATHER_ENABLED=true`, it calls a fixed-origin upstream through the shared outbound HTTP client, emitting outbound metrics and audit records automatically.
 
 ## Quickstart
 
@@ -65,6 +70,7 @@ just check
 Useful endpoints after startup:
 
 - Public API: `http://127.0.0.1:8080/healthz`
+- Public weather example (after setting `WEATHER_ENABLED=true`): `http://127.0.0.1:8080/weather/current?location=Amsterdam`
 - Infra liveness: `http://127.0.0.1:9090/livez`
 - Infra readiness: `http://127.0.0.1:9090/readyz`
 - Infra metrics: `http://127.0.0.1:9090/metrics`
@@ -74,6 +80,7 @@ Run directly on the host instead of compose:
 
 ```bash
 cp .env.example .env
+# Edit .env and set WEATHER_ENABLED=true to enable the example endpoint.
 just db-start
 just run
 ```
@@ -115,6 +122,7 @@ just check
 - Migrations live in `db/migrations`.
 - SQL queries live in `db/queries` and generate code into `internal/dbsqlc`.
 - OpenAPI specs live in `api/` and generate server code into `internal/publicoas` and `internal/infraoas`.
+- The weather example is opt-in via `WEATHER_ENABLED=true`, uses Open-Meteo by default, and can be pointed at other origins with `WEATHER_GEOCODING_BASE_URL` and `WEATHER_FORECAST_BASE_URL`.
 - Every package should keep a `doc.go` package comment.
 
 ## Project Docs

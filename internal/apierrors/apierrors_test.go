@@ -191,6 +191,10 @@ func (h publicErrorHandler) GetHealthz(context.Context) (*publicoas.HealthRespon
 	return nil, h.err
 }
 
+func (h publicErrorHandler) GetCurrentWeather(context.Context, publicoas.GetCurrentWeatherParams) (*publicoas.CurrentWeatherResponseHeaders, error) {
+	return nil, h.err
+}
+
 func (h publicErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCodeWithHeaders {
 	return h.err
 }

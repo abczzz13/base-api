@@ -9,12 +9,14 @@ import (
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestaudit"
+	"github.com/abczzz13/base-api/internal/weather"
 )
 
 // Dependencies contains runtime dependencies needed by the public handler.
 type Dependencies struct {
 	RequestMetrics         *middleware.HTTPRequestMetrics
 	RequestAuditRepository requestaudit.Repository
+	WeatherClient          weather.Client
 }
 
 // NewHandler creates the fully wrapped public API HTTP handler.
@@ -23,7 +25,7 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 		return nil, errors.New("request metrics dependency is required")
 	}
 
-	baseService := NewService(cfg)
+	baseService := NewService(cfg, deps.WeatherClient)
 
 	serverOptions := []publicoas.ServerOption{publicoas.WithErrorHandler(apierrors.OgenErrorHandler)}
 	if cfg.OTEL.TracingEnabled {

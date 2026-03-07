@@ -42,6 +42,11 @@ func TestLoad(t *testing.T) {
 				keyAPIIdleTimeout:          "45s",
 				keyAPIRequestAuditEnabled:  "false",
 				keyAPIRequestLoggerEnabled: "false",
+				keyWeatherEnabled:          "true",
+				keyWeatherGeocodingBaseURL: "https://geocoding-api.weather.example",
+				keyWeatherForecastBaseURL:  "https://forecast.weather.example",
+				keyWeatherAPIKey:           "super-secret",
+				keyWeatherTimeout:          "4s",
 				keyDBURL:                   "postgres://base@127.0.0.1:5432/base_api?sslmode=disable",
 				keyDBMinConns:              "2",
 				keyDBMaxConns:              "40",
@@ -69,6 +74,11 @@ func TestLoad(t *testing.T) {
 				cfg.IdleTimeout = 45 * time.Second
 				cfg.RequestAudit.Enabled = boolPtr(false)
 				cfg.RequestLogger.Enabled = boolPtr(false)
+				cfg.Weather.IntegrationEnabled = true
+				cfg.Weather.GeocodingBaseURL = "https://geocoding-api.weather.example"
+				cfg.Weather.ForecastBaseURL = "https://forecast.weather.example"
+				cfg.Weather.APIKey = "super-secret"
+				cfg.Weather.Timeout = 4 * time.Second
 				cfg.DB.URL = "postgres://base@127.0.0.1:5432/base_api?sslmode=disable"
 				cfg.DB.MinConns = 2
 				cfg.DB.MaxConns = 40
@@ -128,6 +138,21 @@ func TestLoad(t *testing.T) {
 					netip.MustParsePrefix("10.0.0.0/8"),
 					netip.MustParsePrefix("2001:db8::/32"),
 				}
+				return cfg
+			}(),
+		},
+		{
+			name: "ignores weather provider overrides when integration is disabled",
+			env: map[string]string{
+				keyWeatherGeocodingBaseURL: "weather.example/api",
+				keyWeatherForecastBaseURL:  "forecast.weather.example/v1",
+				keyWeatherTimeout:          "7s",
+			},
+			want: func() Config {
+				cfg := defaultConfig()
+				cfg.Weather.GeocodingBaseURL = "weather.example/api"
+				cfg.Weather.ForecastBaseURL = "forecast.weather.example/v1"
+				cfg.Weather.Timeout = 7 * time.Second
 				return cfg
 			}(),
 		},
@@ -351,6 +376,31 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 			wantContains: []string{"invalid API_ADDR=\"invalid-address\""},
 		},
 		{
+			name: "invalid weather enabled boolean fails",
+			env: map[string]string{
+				keyWeatherEnabled: "sure",
+			},
+			wantContains: []string{"invalid boolean for WEATHER_ENABLED=\"sure\""},
+		},
+		{
+			name: "weather geocoding base URL must be absolute origin",
+			env: map[string]string{
+				keyWeatherEnabled:          "true",
+				keyWeatherGeocodingBaseURL: "weather.example/api",
+				keyWeatherForecastBaseURL:  "https://forecast.weather.example",
+			},
+			wantContains: []string{"invalid WEATHER_GEOCODING_BASE_URL=\"weather.example/api\": URL must be absolute"},
+		},
+		{
+			name: "weather forecast base URL must be absolute origin",
+			env: map[string]string{
+				keyWeatherEnabled:          "true",
+				keyWeatherGeocodingBaseURL: "https://geocoding-api.weather.example",
+				keyWeatherForecastBaseURL:  "forecast.weather.example/v1",
+			},
+			wantContains: []string{"invalid WEATHER_FORECAST_BASE_URL=\"forecast.weather.example/v1\": URL must be absolute"},
+		},
+		{
 			name: "invalid DB max connections fails",
 			env: map[string]string{
 				keyDBMaxConns: "not-an-int",
@@ -477,6 +527,11 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 		keyAPIRequestAuditEnabled:           "false",
 		keyAPIRequestAuditTrustedProxyCIDRs: "10.0.0.0/8,192.168.0.0/16",
 		keyAPIRequestLoggerEnabled:          "false",
+		keyWeatherEnabled:                   "true",
+		keyWeatherGeocodingBaseURL:          "https://geocoding-api.weather.example",
+		keyWeatherForecastBaseURL:           "https://forecast.weather.example",
+		keyWeatherAPIKey:                    "weather-secret",
+		keyWeatherTimeout:                   "4s",
 		keyOTELServiceName:                  "base-api-custom",
 		keyOTELSDKDisabled:                  "false",
 		keyOTELTracesSampler:                "traceidratio",
@@ -537,6 +592,11 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 		netip.MustParsePrefix("192.168.0.0/16"),
 	}
 	want.RequestLogger.Enabled = boolPtr(false)
+	want.Weather.IntegrationEnabled = true
+	want.Weather.GeocodingBaseURL = "https://geocoding-api.weather.example"
+	want.Weather.ForecastBaseURL = "https://forecast.weather.example"
+	want.Weather.APIKey = "weather-secret"
+	want.Weather.Timeout = 4 * time.Second
 	want.OTEL.ServiceName = "base-api-custom"
 	want.OTEL.TracingEnabled = true
 	want.OTEL.TracesSampler = telemetry.TraceSamplerTraceIDRatio

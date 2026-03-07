@@ -52,6 +52,7 @@ func (l loader) load() (Config, error) {
 	l.loadRequestAudit(&cfg, &errList)
 	l.loadRequestLogger(&cfg, &errList)
 	l.loadOTEL(&cfg, &errList)
+	l.loadWeather(&cfg, &errList)
 	l.loadDB(&cfg, &errList)
 	validateConfig(cfg, &errList)
 
@@ -293,6 +294,38 @@ func (l loader) loadOTEL(cfg *Config, errList *[]error) {
 	}
 }
 
+func (l loader) loadWeather(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveBool(keyWeatherEnabled); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Weather.IntegrationEnabled = value
+	}
+
+	if value, ok, err := l.resolveString(keyWeatherGeocodingBaseURL); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Weather.GeocodingBaseURL = value
+	}
+
+	if value, ok, err := l.resolveString(keyWeatherForecastBaseURL); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Weather.ForecastBaseURL = value
+	}
+
+	if value, ok, err := l.resolveString(keyWeatherAPIKey); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Weather.APIKey = value
+	}
+
+	if value, ok, err := l.resolvePositiveDuration(keyWeatherTimeout); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Weather.Timeout = value
+	}
+}
+
 func (l loader) loadDB(cfg *Config, errList *[]error) {
 	if value, ok, err := l.resolveString(keyDBURL); err != nil {
 		appendLoadError(errList, err)
@@ -392,6 +425,21 @@ func validateConfig(cfg Config, errList *[]error) {
 
 	appendLoadError(errList, validateAddress(keyAPIAddr, cfg.Address))
 	appendLoadError(errList, validateAddress(keyAPIInfraAddr, cfg.InfraAddress))
+	if cfg.Weather.Enabled() {
+		appendLoadError(errList, validateOptionalBaseURL(keyWeatherGeocodingBaseURL, cfg.Weather.GeocodingBaseURL))
+		appendLoadError(errList, validateOptionalBaseURL(keyWeatherForecastBaseURL, cfg.Weather.ForecastBaseURL))
+
+		weatherGeocodingConfigured := strings.TrimSpace(cfg.Weather.GeocodingBaseURL) != ""
+		weatherForecastConfigured := strings.TrimSpace(cfg.Weather.ForecastBaseURL) != ""
+
+		if weatherGeocodingConfigured != weatherForecastConfigured {
+			appendLoadError(errList, fmt.Errorf(
+				"invalid weather integration configuration: %s and %s must be configured together",
+				keyWeatherGeocodingBaseURL,
+				keyWeatherForecastBaseURL,
+			))
+		}
+	}
 
 	if cfg.DB.MinConns > cfg.DB.MaxConns {
 		appendLoadError(errList, fmt.Errorf(
@@ -676,6 +724,32 @@ func normalizeOrigin(origin string) (string, bool) {
 func validateAddress(key, value string) error {
 	if _, _, err := net.SplitHostPort(value); err != nil {
 		return fmt.Errorf("invalid %s=%q: %w", key, value, err)
+	}
+
+	return nil
+}
+
+func validateOptionalBaseURL(key, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid %s=%q: parse URL: %w", key, value, err)
+	}
+	if !parsed.IsAbs() {
+		return fmt.Errorf("invalid %s=%q: URL must be absolute", key, value)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("invalid %s=%q: URL must not include user info", key, value)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("invalid %s=%q: URL must not include query or fragment", key, value)
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("invalid %s=%q: URL must not include a path", key, value)
 	}
 
 	return nil

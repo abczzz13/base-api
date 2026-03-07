@@ -38,6 +38,12 @@ const (
 	keyOTELExporterOTLPEndpoint       = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	keyOTELExporterOTLPTracesEndpoint = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 
+	keyWeatherEnabled          = "WEATHER_ENABLED"
+	keyWeatherGeocodingBaseURL = "WEATHER_GEOCODING_BASE_URL"
+	keyWeatherForecastBaseURL  = "WEATHER_FORECAST_BASE_URL"
+	keyWeatherAPIKey           = "WEATHER_API_KEY" //nolint:gosec // Env var name, not a credential value.
+	keyWeatherTimeout          = "WEATHER_TIMEOUT"
+
 	keyDBURL                   = "DB_URL"
 	keyDBMinConns              = "DB_MIN_CONNS"
 	keyDBMaxConns              = "DB_MAX_CONNS"

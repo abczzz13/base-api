@@ -14,11 +14,14 @@ import (
 	"github.com/abczzz13/base-api/internal/httpserver"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/outboundaudit"
+	"github.com/abczzz13/base-api/internal/outboundhttp"
 	"github.com/abczzz13/base-api/internal/postgres"
 	"github.com/abczzz13/base-api/internal/publicapi"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 	"github.com/abczzz13/base-api/internal/version"
+	"github.com/abczzz13/base-api/internal/weather"
 )
 
 func Run(
@@ -87,9 +90,45 @@ func Run(
 	)
 	runtimeCleanup.Add(shutdownRequestAuditRepository)
 
+	baseOutboundAuditRepository := outboundaudit.NewPostgresRepository(database)
+	outboundAuditRepository, shutdownOutboundAuditRepository := outboundaudit.NewAsyncRepositoryWithConfig(
+		baseOutboundAuditRepository,
+		outboundaudit.AsyncConfig{Metrics: metricsRuntime.outboundAudit},
+	)
+	runtimeCleanup.Add(shutdownOutboundAuditRepository)
+
+	var weatherClient weather.Client
+	if cfg.Weather.Enabled() {
+		weatherGeocodingClient, err := outboundhttp.New(outboundhttp.Config{
+			Client:          "open_meteo_geocoding",
+			BaseURL:         cfg.Weather.GeocodingBaseURL,
+			Metrics:         metricsRuntime.httpClient,
+			AuditRepository: outboundAuditRepository,
+		})
+		if err != nil {
+			return fmt.Errorf("create weather geocoding client: %w", err)
+		}
+
+		weatherForecastClient, err := outboundhttp.New(outboundhttp.Config{
+			Client:          "open_meteo_forecast",
+			BaseURL:         cfg.Weather.ForecastBaseURL,
+			Metrics:         metricsRuntime.httpClient,
+			AuditRepository: outboundAuditRepository,
+		})
+		if err != nil {
+			return fmt.Errorf("create weather forecast client: %w", err)
+		}
+
+		weatherClient, err = weather.New(weatherGeocodingClient, weatherForecastClient, cfg.Weather.APIKey, cfg.Weather.Timeout)
+		if err != nil {
+			return fmt.Errorf("configure weather integration: %w", err)
+		}
+	}
+
 	publicHandler, err := publicapi.NewHandler(cfg, publicapi.Dependencies{
 		RequestMetrics:         metricsRuntime.http,
 		RequestAuditRepository: requestAuditRepository,
+		WeatherClient:          weatherClient,
 	})
 	if err != nil {
 		return fmt.Errorf("create public API handler: %w", err)
@@ -187,6 +226,8 @@ func logStartupConfiguration(ctx context.Context, cfg config.Config) {
 	if cfg.OTEL.TracesSamplerArg != nil {
 		attrs = append(attrs, slog.Float64("tracing_sampler_arg", *cfg.OTEL.TracesSamplerArg))
 	}
+
+	attrs = append(attrs, slog.Bool("weather_enabled", cfg.Weather.Enabled()))
 
 	slog.LogAttrs(ctx, slog.LevelInfo, "startup configuration", attrs...)
 }

@@ -20,6 +20,30 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
         default:
           $ref: "#/components/responses/DefaultError"
+  /weather/current:
+    x-ogen-operation-group: Weather
+    get:
+      operationId: getCurrentWeather
+      summary: Current weather for a location
+      parameters:
+        - in: query
+          name: location
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Current weather conditions
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentWeatherResponse"
+        default:
+          $ref: "#/components/responses/DefaultError"
 components:
   headers:
     RequestId:
@@ -44,6 +68,27 @@ components:
       properties:
         status:
           type: string
+    CurrentWeatherResponse:
+      type: object
+      required:
+        - provider
+        - location
+        - condition
+        - temperatureC
+        - observedAt
+      properties:
+        provider:
+          type: string
+        location:
+          type: string
+        condition:
+          type: string
+        temperatureC:
+          type: number
+          format: double
+        observedAt:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       required:

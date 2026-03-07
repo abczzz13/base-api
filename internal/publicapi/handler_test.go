@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -20,6 +22,7 @@ import (
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/requestaudit"
+	"github.com/abczzz13/base-api/internal/weather"
 )
 
 func TestNewPublicHandlerCORSAndCSRFInteraction(t *testing.T) {
@@ -295,7 +298,55 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 	}
 }
 
+func TestNewPublicHandlerWeatherEndpointUsesInjectedClient(t *testing.T) {
+	handler, err := newPublicHandlerForTestWithDependencies(t, config.Config{Environment: "test"}, Dependencies{
+		WeatherClient: weather.ClientFunc(func(ctx context.Context, location string) (weather.CurrentWeather, error) {
+			if diff := cmp.Diff("Amsterdam", location); diff != "" {
+				t.Fatalf("location mismatch (-want +got):\n%s", diff)
+			}
+
+			return weather.CurrentWeather{
+				Provider:     "open-meteo",
+				Location:     "Amsterdam",
+				Condition:    "Cloudy",
+				TemperatureC: 12.5,
+				ObservedAt:   time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC),
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/weather/current?location=Amsterdam", nil)
+	req.Header.Set("X-Request-Id", "req-123")
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+	if got := rr.Header().Get("X-Request-Id"); got != "req-123" {
+		t.Fatalf("X-Request-Id header mismatch: want %q, got %q", "req-123", got)
+	}
+	for _, want := range []string{
+		`"provider":"open-meteo"`,
+		`"location":"Amsterdam"`,
+		`"condition":"Cloudy"`,
+		`"temperatureC":12.5`,
+		`"observedAt":"2026-03-07T12:00:00Z"`,
+	} {
+		if !strings.Contains(rr.Body.String(), want) {
+			t.Fatalf("response body %q does not contain %q", rr.Body.String(), want)
+		}
+	}
+}
+
 func newPublicHandlerForTest(t *testing.T, cfg config.Config) (http.Handler, error) {
+	return newPublicHandlerForTestWithDependencies(t, cfg, Dependencies{})
+}
+
+func newPublicHandlerForTestWithDependencies(t *testing.T, cfg config.Config, deps Dependencies) (http.Handler, error) {
 	t.Helper()
 
 	registry := prometheus.NewRegistry()
@@ -304,8 +355,10 @@ func newPublicHandlerForTest(t *testing.T, cfg config.Config) (http.Handler, err
 		t.Fatalf("create request metrics: %v", err)
 	}
 
-	return NewHandler(cfg, Dependencies{
-		RequestMetrics:         requestMetrics,
-		RequestAuditRepository: requestaudit.NopRepository(),
-	})
+	deps.RequestMetrics = requestMetrics
+	if deps.RequestAuditRepository == nil {
+		deps.RequestAuditRepository = requestaudit.NopRepository()
+	}
+
+	return NewHandler(cfg, deps)
 }

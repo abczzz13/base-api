@@ -18,6 +18,10 @@ const (
 	defaultWriteTimeout            = 30 * time.Second
 	defaultIdleTimeout             = 60 * time.Second
 	defaultCORSMaxAge              = 5 * time.Minute
+	defaultWeatherEnabled          = false
+	defaultWeatherGeocodingBaseURL = "https://geocoding-api.open-meteo.com"
+	defaultWeatherForecastBaseURL  = "https://api.open-meteo.com"
+	defaultWeatherTimeout          = 5 * time.Second
 	defaultDBMinConns              = int32(0)
 	defaultDBMaxConns              = int32(20)
 	defaultDBMaxConnLifetime       = time.Hour
@@ -51,6 +55,12 @@ func defaultConfig() Config {
 		},
 		OTEL: OTELConfig{
 			TracesSampler: telemetry.DefaultTraceSampler,
+		},
+		Weather: WeatherConfig{
+			IntegrationEnabled: defaultWeatherEnabled,
+			GeocodingBaseURL:   defaultWeatherGeocodingBaseURL,
+			ForecastBaseURL:    defaultWeatherForecastBaseURL,
+			Timeout:            defaultWeatherTimeout,
 		},
 		DB: DBConfig{
 			MinConns:              defaultDBMinConns,

@@ -2,11 +2,11 @@ package requestid
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -44,9 +44,9 @@ func Normalize(value string) (string, bool) {
 
 // Generate creates a new request ID.
 func Generate() string {
-	var bytes [16]byte
-	if _, err := rand.Read(bytes[:]); err == nil {
-		return hex.EncodeToString(bytes[:])
+	generated, err := uuid.NewV7()
+	if err == nil {
+		return generated.String()
 	}
 
 	return fmt.Sprintf("fallback-%d", time.Now().UTC().UnixNano())

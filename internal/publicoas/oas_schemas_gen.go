@@ -4,10 +4,96 @@ package publicoas
 
 import (
 	"fmt"
+	"time"
 )
 
 func (s *DefaultErrorStatusCodeWithHeaders) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
+}
+
+// Ref: #/components/schemas/CurrentWeatherResponse
+type CurrentWeatherResponse struct {
+	Provider     string    `json:"provider"`
+	Location     string    `json:"location"`
+	Condition    string    `json:"condition"`
+	TemperatureC float64   `json:"temperatureC"`
+	ObservedAt   time.Time `json:"observedAt"`
+}
+
+// GetProvider returns the value of Provider.
+func (s *CurrentWeatherResponse) GetProvider() string {
+	return s.Provider
+}
+
+// GetLocation returns the value of Location.
+func (s *CurrentWeatherResponse) GetLocation() string {
+	return s.Location
+}
+
+// GetCondition returns the value of Condition.
+func (s *CurrentWeatherResponse) GetCondition() string {
+	return s.Condition
+}
+
+// GetTemperatureC returns the value of TemperatureC.
+func (s *CurrentWeatherResponse) GetTemperatureC() float64 {
+	return s.TemperatureC
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *CurrentWeatherResponse) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// SetProvider sets the value of Provider.
+func (s *CurrentWeatherResponse) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetLocation sets the value of Location.
+func (s *CurrentWeatherResponse) SetLocation(val string) {
+	s.Location = val
+}
+
+// SetCondition sets the value of Condition.
+func (s *CurrentWeatherResponse) SetCondition(val string) {
+	s.Condition = val
+}
+
+// SetTemperatureC sets the value of TemperatureC.
+func (s *CurrentWeatherResponse) SetTemperatureC(val float64) {
+	s.TemperatureC = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *CurrentWeatherResponse) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+// CurrentWeatherResponseHeaders wraps CurrentWeatherResponse with response headers.
+type CurrentWeatherResponseHeaders struct {
+	XRequestID OptString
+	Response   CurrentWeatherResponse
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *CurrentWeatherResponseHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *CurrentWeatherResponseHeaders) GetResponse() CurrentWeatherResponse {
+	return s.Response
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *CurrentWeatherResponseHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *CurrentWeatherResponseHeaders) SetResponse(val CurrentWeatherResponse) {
+	s.Response = val
 }
 
 // DefaultErrorStatusCodeWithHeaders wraps ErrorResponse with status code and response headers.

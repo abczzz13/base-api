@@ -48,24 +48,58 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/healthz"
+		case '/': // Prefix: "/"
 
-			if l := len("/healthz"); len(elem) >= l && elem[0:l] == "/healthz" {
+			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 				elem = elem[l:]
 			} else {
 				break
 			}
 
 			if len(elem) == 0 {
-				// Leaf node.
-				switch r.Method {
-				case "GET":
-					s.handleGetHealthzRequest([0]string{}, elemIsEscaped, w, r)
-				default:
-					s.notAllowed(w, r, "GET")
+				break
+			}
+			switch elem[0] {
+			case 'h': // Prefix: "healthz"
+
+				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
+					elem = elem[l:]
+				} else {
+					break
 				}
 
-				return
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleGetHealthzRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, "GET")
+					}
+
+					return
+				}
+
+			case 'w': // Prefix: "weather/current"
+
+				if l := len("weather/current"); len(elem) >= l && elem[0:l] == "weather/current" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleGetCurrentWeatherRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, "GET")
+					}
+
+					return
+				}
+
 			}
 
 		}
@@ -154,29 +188,68 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/healthz"
+		case '/': // Prefix: "/"
 
-			if l := len("/healthz"); len(elem) >= l && elem[0:l] == "/healthz" {
+			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 				elem = elem[l:]
 			} else {
 				break
 			}
 
 			if len(elem) == 0 {
-				// Leaf node.
-				switch method {
-				case "GET":
-					r.name = GetHealthzOperation
-					r.summary = "Public health endpoint"
-					r.operationID = "getHealthz"
-					r.operationGroup = "Base"
-					r.pathPattern = "/healthz"
-					r.args = args
-					r.count = 0
-					return r, true
-				default:
-					return
+				break
+			}
+			switch elem[0] {
+			case 'h': // Prefix: "healthz"
+
+				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
+					elem = elem[l:]
+				} else {
+					break
 				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = GetHealthzOperation
+						r.summary = "Public health endpoint"
+						r.operationID = "getHealthz"
+						r.operationGroup = "Base"
+						r.pathPattern = "/healthz"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
+			case 'w': // Prefix: "weather/current"
+
+				if l := len("weather/current"); len(elem) >= l && elem[0:l] == "weather/current" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = GetCurrentWeatherOperation
+						r.summary = "Current weather for a location"
+						r.operationID = "getCurrentWeather"
+						r.operationGroup = "Weather"
+						r.pathPattern = "/weather/current"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
 			}
 
 		}

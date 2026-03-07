@@ -128,6 +128,13 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 			TracesSampler:    telemetry.TraceSamplerTraceIDRatio,
 			TracesSamplerArg: &samplerArg,
 		},
+		Weather: config.WeatherConfig{
+			IntegrationEnabled: true,
+			GeocodingBaseURL:   "https://geocoding-api.open-meteo.com",
+			ForecastBaseURL:    "https://api.open-meteo.com",
+			APIKey:             "super-secret",
+			Timeout:            4 * time.Second,
+		},
 		DB: config.DBConfig{
 			URL:                   "postgres://db.example/base_api",
 			MinConns:              2,
@@ -154,6 +161,7 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 	for key, want := range map[string]any{
 		"request_logger_enabled":                  true,
 		"request_audit_enabled":                   true,
+		"weather_enabled":                         true,
 		"request_audit_client_ip_security_mode":   "strict",
 		"request_audit_client_ip_priority":        "x_forwarded_for,remote_addr",
 		"request_audit_trusted_proxy_source":      "configured",
@@ -172,6 +180,9 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 	}
 	if _, ok := entry["db_url"]; ok {
 		t.Fatal("startup configuration log must not include db_url")
+	}
+	if _, ok := entry["weather_api_key"]; ok {
+		t.Fatal("startup configuration log must not include weather_api_key")
 	}
 }
 

@@ -6,44 +6,12 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 )
 
 var ErrStartupBackendUnavailable = errors.New("rate limiter backend unavailable during startup")
 
 const headerPolicyName = "default"
-
-type ValkeyMode string
-
-const (
-	ValkeyModeStandalone ValkeyMode = "standalone"
-	ValkeyModeCluster    ValkeyMode = "cluster"
-)
-
-type ValkeyConfig struct {
-	Mode      ValkeyMode
-	Addrs     []string
-	KeyPrefix string
-}
-
-func (c ValkeyConfig) NormalizedMode() ValkeyMode {
-	mode := ValkeyMode(strings.ToLower(strings.TrimSpace(string(c.Mode))))
-	if mode == "" {
-		return ValkeyModeStandalone
-	}
-
-	return mode
-}
-
-func (c ValkeyConfig) ValidateMode() error {
-	switch c.NormalizedMode() {
-	case ValkeyModeStandalone, ValkeyModeCluster:
-		return nil
-	default:
-		return fmt.Errorf("unsupported mode %q", c.Mode)
-	}
-}
 
 type Policy struct {
 	RequestsPerSecond float64
@@ -128,8 +96,8 @@ func HeaderValues(policy Policy, decision Decision) ResponseHeaders {
 
 	return ResponseHeaders{
 		RetryAfter:      strconv.Itoa(retryAfterSeconds),
-		RateLimit:       fmt.Sprintf("%q;r=%d;t=%d", headerPolicyName, maxInt(0, decision.Remaining), retryAfterSeconds),
-		RateLimitPolicy: fmt.Sprintf("%q;q=%d;w=%d", headerPolicyName, maxInt(0, policy.Burst), policyWindowSeconds(policy)),
+		RateLimit:       fmt.Sprintf("%q;r=%d;t=%d", headerPolicyName, max(0, decision.Remaining), retryAfterSeconds),
+		RateLimitPolicy: fmt.Sprintf("%q;q=%d;w=%d", headerPolicyName, max(0, policy.Burst), policyWindowSeconds(policy)),
 	}
 }
 
@@ -138,12 +106,7 @@ func delaySeconds(delay time.Duration) int {
 		return 1
 	}
 
-	seconds := int(math.Ceil(delay.Seconds()))
-	if seconds < 1 {
-		seconds = 1
-	}
-
-	return seconds
+	return max(1, int(math.Ceil(delay.Seconds())))
 }
 
 func policyWindowSeconds(policy Policy) int {

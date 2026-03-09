@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abczzz13/base-api/internal/outboundhttp"
+	"github.com/abczzz13/base-api/internal/httpclient"
 )
 
 const (
@@ -98,14 +98,14 @@ func (e *NotFoundError) Error() string {
 }
 
 type Service struct {
-	geocodingClient *outboundhttp.Service
-	forecastClient  *outboundhttp.Service
+	geocodingClient *httpclient.Service
+	forecastClient  *httpclient.Service
 	apiKey          string
 	timeout         time.Duration
 }
 
-// New creates an Open-Meteo weather client backed by outboundhttp.
-func New(geocodingClient, forecastClient *outboundhttp.Service, apiKey string, timeout time.Duration) (*Service, error) {
+// New creates an Open-Meteo weather client backed by httpclient.
+func New(geocodingClient, forecastClient *httpclient.Service, apiKey string, timeout time.Duration) (*Service, error) {
 	if geocodingClient == nil {
 		return nil, errors.New("weather geocoding client is required")
 	}

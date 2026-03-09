@@ -5,12 +5,13 @@ import (
 	"net/http"
 
 	"github.com/abczzz13/base-api/internal/apierrors"
+	"github.com/abczzz13/base-api/internal/clientip"
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
-	"github.com/abczzz13/base-api/internal/weather"
 )
 
 // Dependencies contains runtime dependencies needed by the public handler.
@@ -27,10 +28,11 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 		return nil, errors.New("request metrics dependency is required")
 	}
 
-	baseService := NewService(cfg, deps.WeatherClient)
-	var clientIPResolver *middleware.ClientIPResolver
+	baseService := NewService(deps.WeatherClient)
+
+	var clientIPResolver *clientip.Resolver
 	if cfg.RequestAudit.IsEnabled() || cfg.RateLimit.IsEnabled() {
-		clientIPResolver = middleware.NewClientIPResolver("public handler", cfg.ClientIP.TrustedProxyCIDRs)
+		clientIPResolver = clientip.NewResolver("public handler", cfg.ClientIP.TrustedProxyCIDRs)
 	}
 
 	serverOptions := []publicoas.ServerOption{publicoas.WithErrorHandler(apierrors.OgenErrorHandler)}
@@ -45,7 +47,7 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 
 	routeLabel := requestMetricsRouteLabeler(baseAPI)
 
-	middlewares := make([]func(http.Handler) http.Handler, 0, 7)
+	middlewares := make([]func(http.Handler) http.Handler, 0, 10)
 	middlewares = append(middlewares,
 		middleware.RequestID(),
 		middleware.RequestMetrics(deps.RequestMetrics, middleware.RequestMetricsConfig{
@@ -68,11 +70,10 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 
 		middlewares = append(middlewares,
 			middleware.RequestAudit(middleware.RequestAuditConfig{
-				ClientIPResolver:  clientIPResolver,
-				Store:             deps.RequestAuditRepository,
-				Server:            "public",
-				RouteLabel:        routeLabel,
-				TrustedProxyCIDRs: cfg.ClientIP.TrustedProxyCIDRs,
+				ClientIPResolver: clientIPResolver,
+				Store:            deps.RequestAuditRepository,
+				Server:           "public",
+				RouteLabel:       routeLabel,
 			}),
 		)
 	}
@@ -93,31 +94,28 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 		}),
 	)
 
+	if cfg.CSRF.Enabled {
+		middlewares = append(middlewares, middleware.CSRF(middleware.CSRFConfig{
+			TrustedOrigins: cfg.CSRF.TrustedOrigins,
+		}))
+	}
+
 	if cfg.RateLimit.IsEnabled() {
 		if deps.RateLimiter == nil {
 			return nil, errors.New("rate limiter dependency is required")
 		}
 
 		middlewares = append(middlewares, middleware.RateLimit(middleware.RateLimitConfig{
-			ClientIPResolver:  clientIPResolver,
-			Store:             deps.RateLimiter,
-			Server:            "public",
-			RouteLabel:        routeLabel,
-			BackendTimeout:    cfg.RateLimit.Timeout,
-			FailOpen:          cfg.RateLimit.FailOpen,
-			DefaultPolicy:     cfg.RateLimit.DefaultPolicy,
-			RouteOverrides:    cfg.RateLimit.RouteOverrides,
-			TrustedProxyCIDRs: cfg.ClientIP.TrustedProxyCIDRs,
+			ClientIPResolver: clientIPResolver,
+			Store:            deps.RateLimiter,
+			Server:           "public",
+			RouteLabel:       routeLabel,
+			BackendTimeout:   cfg.RateLimit.Timeout,
+			FailOpen:         cfg.RateLimit.FailOpen,
+			DefaultPolicy:    cfg.RateLimit.DefaultPolicy,
+			RouteOverrides:   cfg.RateLimit.RouteOverrides,
 		}))
 	}
 
-	chain := middleware.NewChain(middlewares...)
-
-	if cfg.CSRF.Enabled {
-		chain.With(middleware.CSRF(middleware.CSRFConfig{
-			TrustedOrigins: cfg.CSRF.TrustedOrigins,
-		}))
-	}
-
-	return chain.WrapHandler(baseAPI), nil
+	return middleware.NewChain(middlewares...).WrapHandler(baseAPI), nil
 }

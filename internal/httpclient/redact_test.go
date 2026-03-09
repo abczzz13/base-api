@@ -1,4 +1,4 @@
-package outboundhttp
+package httpclient
 
 import (
 	"net/http"

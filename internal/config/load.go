@@ -18,6 +18,7 @@ import (
 	"github.com/abczzz13/base-api/internal/publicroute"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
+	"github.com/abczzz13/base-api/internal/valkey"
 )
 
 type LookupEnvFunc func(string) (string, bool)
@@ -56,6 +57,7 @@ func (l loader) load() (Config, error) {
 	l.loadRequestAudit(&cfg, &errList)
 	l.loadRequestLogger(&cfg, &errList)
 	l.loadRateLimit(&cfg, &errList)
+	l.loadValkey(&cfg, &errList)
 	l.loadOTEL(&cfg, &errList)
 	l.loadWeather(&cfg, &errList)
 	l.loadDB(&cfg, &errList)
@@ -259,22 +261,10 @@ func (l loader) loadRateLimit(cfg *Config, errList *[]error) {
 		cfg.RateLimit.DefaultPolicy.Burst = value
 	}
 
-	if value, ok, err := l.resolveString(keyAPIRateLimitValkeyMode); err != nil {
+	if value, ok, err := l.resolveString(keyAPIRateLimitKeyPrefix); err != nil {
 		appendLoadError(errList, err)
 	} else if ok {
-		cfg.RateLimit.Valkey.Mode = ratelimit.ValkeyMode(value)
-	}
-
-	if value, ok, err := l.resolveString(keyAPIRateLimitValkeyAddrs); err != nil {
-		appendLoadError(errList, err)
-	} else if ok {
-		cfg.RateLimit.Valkey.Addrs = splitAndTrimCSV(value)
-	}
-
-	if value, ok, err := l.resolveString(keyAPIRateLimitValkeyKeyPrefix); err != nil {
-		appendLoadError(errList, err)
-	} else if ok {
-		cfg.RateLimit.Valkey.KeyPrefix = value
+		cfg.RateLimit.KeyPrefix = value
 	}
 
 	if value, ok, err := l.resolveString(keyAPIRateLimitRouteOverridesJSON); err != nil {
@@ -288,6 +278,20 @@ func (l loader) loadRateLimit(cfg *Config, errList *[]error) {
 				cfg.RateLimit.RouteOverrides[route] = override
 			}
 		}
+	}
+}
+
+func (l loader) loadValkey(cfg *Config, errList *[]error) {
+	if value, ok, err := l.resolveString(keyAPIValkeyMode); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Valkey.Mode = valkey.Mode(value)
+	}
+
+	if value, ok, err := l.resolveString(keyAPIValkeyAddrs); err != nil {
+		appendLoadError(errList, err)
+	} else if ok {
+		cfg.Valkey.Addrs = splitAndTrimCSV(value)
 	}
 }
 
@@ -478,7 +482,7 @@ func validateConfig(cfg Config, errList *[]error) {
 	}
 
 	if cfg.RateLimit.IsEnabled() {
-		appendLoadError(errList, validateRateLimitConfig(cfg.RateLimit))
+		appendLoadError(errList, validateRateLimitConfig(cfg.RateLimit, cfg.Valkey))
 	}
 
 	appendLoadError(errList, validateAddress(keyAPIAddr, cfg.Address))
@@ -520,18 +524,18 @@ func validateConfig(cfg Config, errList *[]error) {
 	}
 }
 
-func validateRateLimitConfig(cfg RateLimitConfig) error {
+func validateRateLimitConfig(cfg RateLimitConfig, vcfg valkey.Config) error {
 	if err := cfg.DefaultPolicy.Validate(); err != nil {
 		return fmt.Errorf("invalid rate limit default policy: %w", err)
 	}
-	if err := cfg.Valkey.ValidateMode(); err != nil {
-		return fmt.Errorf("invalid %s=%q: %w", keyAPIRateLimitValkeyMode, cfg.Valkey.Mode, err)
+	if err := vcfg.ValidateMode(); err != nil {
+		return fmt.Errorf("invalid %s=%q: %w", keyAPIValkeyMode, vcfg.Mode, err)
 	}
-	if len(cfg.Valkey.Addrs) == 0 {
-		return fmt.Errorf("%s is enabled but %s is empty", keyAPIRateLimitEnabled, keyAPIRateLimitValkeyAddrs)
+	if len(vcfg.Addrs) == 0 {
+		return fmt.Errorf("%s is enabled but %s is empty", keyAPIRateLimitEnabled, keyAPIValkeyAddrs)
 	}
-	for _, addr := range cfg.Valkey.Addrs {
-		if err := validateAddress(keyAPIRateLimitValkeyAddrs, addr); err != nil {
+	for _, addr := range vcfg.Addrs {
+		if err := validateAddress(keyAPIValkeyAddrs, addr); err != nil {
 			return err
 		}
 	}

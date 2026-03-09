@@ -16,6 +16,7 @@ import (
 	"github.com/abczzz13/base-api/internal/publicroute"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
+	"github.com/abczzz13/base-api/internal/valkey"
 )
 
 func TestLoad(t *testing.T) {
@@ -49,9 +50,9 @@ func TestLoad(t *testing.T) {
 				keyAPIRateLimitTimeout:            "75ms",
 				keyAPIRateLimitDefaultRPS:         "12.5",
 				keyAPIRateLimitDefaultBurst:       "21",
-				keyAPIRateLimitValkeyMode:         "cluster",
-				keyAPIRateLimitValkeyAddrs:        "valkey-1.internal:6379,valkey-2.internal:6379",
-				keyAPIRateLimitValkeyKeyPrefix:    "custom:rl",
+				keyAPIValkeyMode:                  "cluster",
+				keyAPIValkeyAddrs:                 "valkey-1.internal:6379,valkey-2.internal:6379",
+				keyAPIRateLimitKeyPrefix:          "custom:rl",
 				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":3.5,"burst":7},"getHealthz":{"disabled":true}}`,
 				keyWeatherEnabled:                 "true",
 				keyWeatherGeocodingBaseURL:        "https://geocoding-api.weather.example",
@@ -89,11 +90,11 @@ func TestLoad(t *testing.T) {
 				cfg.RateLimit.FailOpen = false
 				cfg.RateLimit.Timeout = 75 * time.Millisecond
 				cfg.RateLimit.DefaultPolicy = ratelimit.Policy{RequestsPerSecond: 12.5, Burst: 21}
-				cfg.RateLimit.Valkey = ratelimit.ValkeyConfig{
-					Mode:      ratelimit.ValkeyModeCluster,
-					Addrs:     []string{"valkey-1.internal:6379", "valkey-2.internal:6379"},
-					KeyPrefix: "custom:rl",
+				cfg.Valkey = valkey.Config{
+					Mode:  valkey.ModeCluster,
+					Addrs: []string{"valkey-1.internal:6379", "valkey-2.internal:6379"},
 				}
+				cfg.RateLimit.KeyPrefix = "custom:rl"
 				cfg.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
 					publicroute.OperationGetHealthz:        {Disabled: true},
 					publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(3.5), Burst: intPtr(7)},
@@ -460,16 +461,16 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 			env: map[string]string{
 				keyAPIRateLimitEnabled: "true",
 			},
-			wantContains: []string{"API_RATE_LIMIT_ENABLED is enabled but API_RATE_LIMIT_VALKEY_ADDRS is empty"},
+			wantContains: []string{"API_RATE_LIMIT_ENABLED is enabled but API_VALKEY_ADDRS is empty"},
 		},
 		{
 			name: "invalid rate limit valkey mode fails when enabled",
 			env: map[string]string{
-				keyAPIRateLimitEnabled:     "true",
-				keyAPIRateLimitValkeyMode:  "sentinel",
-				keyAPIRateLimitValkeyAddrs: "valkey.internal:6379",
+				keyAPIRateLimitEnabled: "true",
+				keyAPIValkeyMode:       "sentinel",
+				keyAPIValkeyAddrs:      "valkey.internal:6379",
 			},
-			wantContains: []string{"invalid API_RATE_LIMIT_VALKEY_MODE=\"sentinel\": unsupported mode \"sentinel\""},
+			wantContains: []string{"invalid API_VALKEY_MODE=\"sentinel\": unsupported mode \"sentinel\""},
 		},
 		{
 			name: "invalid weather enabled boolean fails",
@@ -628,9 +629,9 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 		keyAPIRateLimitTimeout:            "80ms",
 		keyAPIRateLimitDefaultRPS:         "9.5",
 		keyAPIRateLimitDefaultBurst:       "12",
-		keyAPIRateLimitValkeyMode:         "standalone",
-		keyAPIRateLimitValkeyAddrs:        "127.0.0.1:6379",
-		keyAPIRateLimitValkeyKeyPrefix:    "file:rl",
+		keyAPIValkeyMode:                  "standalone",
+		keyAPIValkeyAddrs:                 "127.0.0.1:6379",
+		keyAPIRateLimitKeyPrefix:          "file:rl",
 		keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":2.5,"burst":4}}`,
 		keyWeatherEnabled:                 "true",
 		keyWeatherGeocodingBaseURL:        "https://geocoding-api.weather.example",
@@ -701,11 +702,11 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	want.RateLimit.FailOpen = false
 	want.RateLimit.Timeout = 80 * time.Millisecond
 	want.RateLimit.DefaultPolicy = ratelimit.Policy{RequestsPerSecond: 9.5, Burst: 12}
-	want.RateLimit.Valkey = ratelimit.ValkeyConfig{
-		Mode:      ratelimit.ValkeyModeStandalone,
-		Addrs:     []string{"127.0.0.1:6379"},
-		KeyPrefix: "file:rl",
+	want.Valkey = valkey.Config{
+		Mode:  valkey.ModeStandalone,
+		Addrs: []string{"127.0.0.1:6379"},
 	}
+	want.RateLimit.KeyPrefix = "file:rl"
 	want.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
 		publicroute.OperationGetHealthz:        {Disabled: true},
 		publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(2.5), Burst: intPtr(4)},

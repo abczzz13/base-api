@@ -63,7 +63,8 @@ func TestChain(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		chain := NewChain().With(middleware)
+		chain := NewChain()
+		chain.With(middleware)
 		wrapped := chain.WrapHandler(handler)
 
 		req := httptest.NewRequest("GET", "/test", nil)

@@ -1,4 +1,4 @@
-package middleware
+package responsewriter
 
 import (
 	"net/http"
@@ -9,7 +9,7 @@ import (
 func TestEnsureObservedResponseWriterCreatesWrapperWhenMissing(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	nextWriter, observedRW := ensureObservedResponseWriter(rec)
+	nextWriter, observedRW := EnsureObservedResponseWriter(rec)
 
 	if observedRW == nil {
 		t.Fatal("expected observed response writer to be created")
@@ -24,9 +24,9 @@ func TestEnsureObservedResponseWriterCreatesWrapperWhenMissing(t *testing.T) {
 
 func TestEnsureObservedResponseWriterReusesExistingWrapper(t *testing.T) {
 	rec := httptest.NewRecorder()
-	existing := newObservedResponseWriter(rec)
+	existing := NewObservedResponseWriter(rec)
 
-	nextWriter, observedRW := ensureObservedResponseWriter(existing)
+	nextWriter, observedRW := EnsureObservedResponseWriter(existing)
 
 	if nextWriter != existing {
 		t.Fatalf("expected next writer to stay unchanged")
@@ -38,11 +38,11 @@ func TestEnsureObservedResponseWriterReusesExistingWrapper(t *testing.T) {
 
 func TestEnsureObservedResponseWriterReusesWrappedObservedWriter(t *testing.T) {
 	rec := httptest.NewRecorder()
-	existing := newObservedResponseWriter(rec)
+	existing := NewObservedResponseWriter(rec)
 	wrapped := &unwrapResponseWriter{ResponseWriter: existing}
 	wrappedTwice := &unwrapResponseWriter{ResponseWriter: wrapped}
 
-	nextWriter, observedRW := ensureObservedResponseWriter(wrappedTwice)
+	nextWriter, observedRW := EnsureObservedResponseWriter(wrappedTwice)
 
 	if nextWriter != wrappedTwice {
 		t.Fatalf("expected next writer to preserve outer wrapper")
@@ -54,38 +54,38 @@ func TestEnsureObservedResponseWriterReusesWrappedObservedWriter(t *testing.T) {
 
 func TestObservedResponseWriterTracksFinalStatusAfterInformationalHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
-	rw := newObservedResponseWriter(rec)
+	rw := NewObservedResponseWriter(rec)
 
 	rw.WriteHeader(http.StatusEarlyHints)
 	rw.WriteHeader(http.StatusAccepted)
 
-	if rw.statusCode != http.StatusAccepted {
-		t.Fatalf("expected tracked status %d, got %d", http.StatusAccepted, rw.statusCode)
+	if rw.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected tracked status %d, got %d", http.StatusAccepted, rw.StatusCode)
 	}
 }
 
 func TestObservedResponseWriterDefaultsToOKAfterInformationalHeadersWhenBodyWritten(t *testing.T) {
-	rw := newObservedResponseWriter(&permissiveResponseWriter{})
+	rw := NewObservedResponseWriter(&permissiveResponseWriter{})
 
 	rw.WriteHeader(http.StatusEarlyHints)
 	if _, err := rw.Write([]byte("ok")); err != nil {
 		t.Fatalf("write response body: %v", err)
 	}
 
-	if rw.statusCode != http.StatusOK {
-		t.Fatalf("expected tracked status %d, got %d", http.StatusOK, rw.statusCode)
+	if rw.StatusCode != http.StatusOK {
+		t.Fatalf("expected tracked status %d, got %d", http.StatusOK, rw.StatusCode)
 	}
 }
 
 func TestObservedResponseWriterTreatsSwitchingProtocolsAsFinalStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
-	rw := newObservedResponseWriter(rec)
+	rw := NewObservedResponseWriter(rec)
 
 	rw.WriteHeader(http.StatusSwitchingProtocols)
 	rw.WriteHeader(http.StatusOK)
 
-	if rw.statusCode != http.StatusSwitchingProtocols {
-		t.Fatalf("expected tracked status %d, got %d", http.StatusSwitchingProtocols, rw.statusCode)
+	if rw.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected tracked status %d, got %d", http.StatusSwitchingProtocols, rw.StatusCode)
 	}
 }
 

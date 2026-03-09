@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abczzz13/base-api/internal/apierrors"
+	"github.com/abczzz13/base-api/internal/clientip"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 )
 
@@ -19,7 +20,7 @@ const (
 )
 
 type RateLimitConfig struct {
-	ClientIPResolver  *ClientIPResolver
+	ClientIPResolver  *clientip.Resolver
 	Store             ratelimit.Store
 	Server            string
 	RouteLabel        func(*http.Request) string
@@ -37,17 +38,12 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 		}
 	}
 
-	server := requestMetricsServerLabel(cfg.Server)
-	routeLabel := cfg.RouteLabel
-	if routeLabel == nil {
-		routeLabel = func(*http.Request) string {
-			return RequestMetricsRouteUnmatched
-		}
-	}
+	server := defaultServerLabel(cfg.Server)
+	routeLabel := defaultRouteLabel(cfg.RouteLabel)
 
 	clientIPResolver := cfg.ClientIPResolver
 	if clientIPResolver == nil {
-		clientIPResolver = NewClientIPResolver("rate limit", cfg.TrustedProxyCIDRs)
+		clientIPResolver = clientip.NewResolver("rate limit", cfg.TrustedProxyCIDRs)
 	}
 
 	return func(next http.Handler) http.Handler {

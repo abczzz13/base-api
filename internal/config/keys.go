@@ -37,9 +37,10 @@ const (
 	keyAPIRateLimitDefaultRPS         = "API_RATE_LIMIT_DEFAULT_RPS"
 	keyAPIRateLimitDefaultBurst       = "API_RATE_LIMIT_DEFAULT_BURST"
 	keyAPIRateLimitRouteOverridesJSON = "API_RATE_LIMIT_ROUTE_OVERRIDES_JSON"
-	keyAPIRateLimitValkeyMode         = "API_RATE_LIMIT_VALKEY_MODE"
-	keyAPIRateLimitValkeyAddrs        = "API_RATE_LIMIT_VALKEY_ADDRS"
-	keyAPIRateLimitValkeyKeyPrefix    = "API_RATE_LIMIT_VALKEY_KEY_PREFIX"
+	keyAPIRateLimitKeyPrefix          = "API_RATE_LIMIT_KEY_PREFIX"
+
+	keyAPIValkeyMode  = "API_VALKEY_MODE"
+	keyAPIValkeyAddrs = "API_VALKEY_ADDRS"
 
 	keyOTELServiceName                = "OTEL_SERVICE_NAME"
 	keyOTELSDKDisabled                = "OTEL_SDK_DISABLED"

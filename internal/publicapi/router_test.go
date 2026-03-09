@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
-	"github.com/abczzz13/base-api/internal/weather"
 
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/publicapi"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestGeneratedRoutersBehavior(t *testing.T) {
-	publicHandler, err := publicoas.NewServer(publicapi.NewService(config.Config{Environment: "test"}, weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+	publicHandler, err := publicoas.NewServer(publicapi.NewService(weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 		return weather.CurrentWeather{
 			Provider:     "open-meteo",
 			Location:     "Amsterdam",

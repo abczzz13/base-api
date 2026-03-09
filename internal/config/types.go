@@ -9,6 +9,7 @@ import (
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
+	"github.com/abczzz13/base-api/internal/valkey"
 )
 
 type CORSConfig struct {
@@ -79,7 +80,7 @@ type RateLimitConfig struct {
 	Timeout        time.Duration
 	DefaultPolicy  ratelimit.Policy
 	RouteOverrides map[string]ratelimit.RouteOverride
-	Valkey         ratelimit.ValkeyConfig
+	KeyPrefix      string
 }
 
 func (c RateLimitConfig) IsEnabled() bool {
@@ -132,6 +133,7 @@ type Config struct {
 	RequestAudit      RequestAuditConfig
 	RequestLogger     RequestLoggerConfig
 	RateLimit         RateLimitConfig
+	Valkey            valkey.Config
 	OTEL              OTELConfig
 	Weather           WeatherConfig
 	DB                DBConfig

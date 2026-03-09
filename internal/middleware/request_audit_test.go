@@ -13,10 +13,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/abczzz13/clientip"
+	extclientip "github.com/abczzz13/clientip"
 	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/abczzz13/base-api/internal/clientip"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/requestid"
@@ -177,7 +178,7 @@ func TestRequestAuditRedactsSensitiveHeadersAndJSONBodies(t *testing.T) {
 func TestSharedClientIPResolverCachesResolutionAcrossMiddlewares(t *testing.T) {
 	store := &recordingRequestAuditStore{}
 	extractor := &countingClientIPExtractor{addr: netip.MustParseAddr("93.184.216.34")}
-	resolver := &ClientIPResolver{extractor: extractor}
+	resolver := clientip.NewResolverWithExtractor(extractor)
 
 	handler := RequestAudit(RequestAuditConfig{
 		ClientIPResolver: resolver,
@@ -511,7 +512,7 @@ type countingClientIPExtractor struct {
 	calls int
 }
 
-func (e *countingClientIPExtractor) ExtractAddr(*http.Request, ...clientip.OverrideOptions) (netip.Addr, error) {
+func (e *countingClientIPExtractor) ExtractAddr(*http.Request, ...extclientip.OverrideOptions) (netip.Addr, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.calls++

@@ -6,23 +6,21 @@ import (
 	"net/http"
 
 	"github.com/abczzz13/base-api/internal/apierrors"
-	"github.com/abczzz13/base-api/internal/config"
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestid"
-	"github.com/abczzz13/base-api/internal/weather"
 )
 
 var _ publicoas.Handler = (*Service)(nil)
 
 // Service implements the public OAS-generated handler interface.
 type Service struct {
-	cfg           config.Config
 	weatherClient weather.Client
 }
 
 // NewService creates a new public API service.
-func NewService(cfg config.Config, weatherClient weather.Client) *Service {
-	return &Service{cfg: cfg, weatherClient: weatherClient}
+func NewService(weatherClient weather.Client) *Service {
+	return &Service{weatherClient: weatherClient}
 }
 
 func (s *Service) GetHealthz(ctx context.Context) (publicoas.GetHealthzRes, error) {
@@ -61,8 +59,6 @@ func (s *Service) GetCurrentWeather(ctx context.Context, params publicoas.GetCur
 }
 
 func (s *Service) NewError(ctx context.Context, err error) *publicoas.DefaultErrorStatusCodeWithHeaders {
-	_ = err
-
 	return apierrors.New(http.StatusInternalServerError, "internal_error", "internal server error").WithContext(ctx).OASDefault()
 }
 

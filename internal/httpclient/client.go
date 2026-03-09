@@ -1,4 +1,4 @@
-package outboundhttp
+package httpclient
 
 import (
 	"bytes"
@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/abczzz13/base-api/internal/bodycapture"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
@@ -452,66 +453,26 @@ func stripTraceContextHeaders(headers http.Header) {
 	headers.Del("Baggage")
 }
 
-type bodyCapture struct {
-	maxBytes   int
-	buffer     bytes.Buffer
-	totalBytes int64
-	truncated  bool
-	completed  bool
-}
-
-func (capture *bodyCapture) capture(chunk []byte) {
-	if len(chunk) == 0 {
-		return
-	}
-
-	capture.totalBytes += int64(len(chunk))
-
-	if capture.maxBytes <= 0 {
-		capture.truncated = true
-		return
-	}
-
-	remaining := capture.maxBytes - capture.buffer.Len()
-	if remaining <= 0 {
-		capture.truncated = true
-		return
-	}
-
-	if len(chunk) > remaining {
-		_, _ = capture.buffer.Write(chunk[:remaining])
-		capture.truncated = true
-		return
-	}
-
-	_, _ = capture.buffer.Write(chunk)
-}
-
-func (capture *bodyCapture) markComplete() {
-	capture.completed = true
-}
-
 type capturingReadCloser struct {
 	io.ReadCloser
-	captureState *bodyCapture
+	captureState *bodycapture.Buffer
 }
 
 func newCapturingReadCloser(body io.ReadCloser, maxBytes int) *capturingReadCloser {
+	buf := bodycapture.NewBuffer(maxBytes)
 	return &capturingReadCloser{
-		ReadCloser: body,
-		captureState: &bodyCapture{
-			maxBytes: maxBytes,
-		},
+		ReadCloser:   body,
+		captureState: &buf,
 	}
 }
 
 func (capture *capturingReadCloser) Read(p []byte) (int, error) {
 	n, err := capture.ReadCloser.Read(p)
 	if n > 0 {
-		capture.captureState.capture(p[:n])
+		capture.captureState.Capture(p[:n])
 	}
 	if errors.Is(err, io.EOF) {
-		capture.captureState.markComplete()
+		capture.captureState.MarkComplete()
 	}
 
 	return n, err
@@ -668,7 +629,7 @@ func requestSizeBytes(req *http.Request, capture *capturingReadCloser) int64 {
 		return 0
 	}
 
-	return capture.captureState.totalBytes
+	return capture.captureState.TotalBytes()
 }
 
 func responseSizeBytes(resp *http.Response, capture *capturingReadCloser) int64 {
@@ -679,7 +640,7 @@ func responseSizeBytes(resp *http.Response, capture *capturingReadCloser) int64 
 		return 0
 	}
 
-	return capture.captureState.totalBytes
+	return capture.captureState.TotalBytes()
 }
 
 func responseStatusCode(resp *http.Response) int {
@@ -701,27 +662,27 @@ func capturedBytes(capture *capturingReadCloser) []byte {
 		return nil
 	}
 
-	return append([]byte(nil), capture.captureState.buffer.Bytes()...)
+	return capture.captureState.Bytes()
 }
 
 func captureTruncated(contentLength int64, capture *capturingReadCloser) bool {
 	if capture == nil || capture.captureState == nil {
 		return false
 	}
-	if capture.captureState.truncated {
+	if capture.captureState.Truncated() {
 		return true
 	}
-	if capture.captureState.completed {
+	if capture.captureState.Completed() {
 		return false
 	}
-	if contentLength == 0 && capture.captureState.totalBytes == 0 {
+	if contentLength == 0 && capture.captureState.TotalBytes() == 0 {
 		return false
 	}
 	if contentLength > 0 {
-		return capture.captureState.totalBytes < contentLength
+		return capture.captureState.TotalBytes() < contentLength
 	}
 
-	return capture.captureState.totalBytes > 0
+	return capture.captureState.TotalBytes() > 0
 }
 
 func errorKind(err error) string {

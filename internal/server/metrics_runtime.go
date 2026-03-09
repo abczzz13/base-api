@@ -6,9 +6,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
+	"github.com/abczzz13/base-api/internal/httpclient"
 	"github.com/abczzz13/base-api/internal/middleware"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
-	"github.com/abczzz13/base-api/internal/outboundhttp"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 )
 
@@ -16,7 +16,7 @@ type runtimeMetrics struct {
 	registry      *prometheus.Registry
 	http          *middleware.HTTPRequestMetrics
 	audit         *requestaudit.Metrics
-	httpClient    *outboundhttp.Metrics
+	httpClient    *httpclient.Metrics
 	outboundAudit *outboundaudit.Metrics
 }
 
@@ -41,7 +41,7 @@ func setupMetricsRuntime() (*runtimeMetrics, error) {
 		return nil, fmt.Errorf("create request audit metrics: %w", err)
 	}
 
-	httpClientMetrics, err := outboundhttp.NewMetrics(metricsRegistry)
+	httpClientMetrics, err := httpclient.NewMetrics(metricsRegistry)
 	if err != nil {
 		return nil, fmt.Errorf("create outbound HTTP metrics: %w", err)
 	}

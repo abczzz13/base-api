@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultKeyPrefix = "base-api:ratelimit"
+	DefaultKeyPrefix = "base-api:ratelimit"
 	minKeyTTL        = time.Second
 )
 
@@ -75,27 +75,6 @@ type ValkeyStore struct {
 
 type tokenBucketEvalFunc func(context.Context, valkey.Client, *valkey.Lua, string, []string) (Decision, error)
 
-func NewValkeyClient(cfg ValkeyConfig) (valkey.Client, error) {
-	if err := cfg.ValidateMode(); err != nil {
-		return nil, fmt.Errorf("validate mode: %w", err)
-	}
-	if len(cfg.Addrs) == 0 {
-		return nil, errors.New("at least one Valkey address is required")
-	}
-
-	option := valkey.ClientOption{InitAddress: cfg.Addrs}
-	if cfg.NormalizedMode() == ValkeyModeCluster {
-		option.ShuffleInit = true
-	}
-
-	client, err := valkey.NewClient(option)
-	if err != nil {
-		return nil, fmt.Errorf("create client: %w", err)
-	}
-
-	return client, nil
-}
-
 func NewValkeyStore(cfg ValkeyStoreConfig) (*ValkeyStore, error) {
 	if cfg.Client == nil {
 		return nil, errors.New("valkey client is required")
@@ -103,7 +82,7 @@ func NewValkeyStore(cfg ValkeyStoreConfig) (*ValkeyStore, error) {
 
 	keyPrefix := strings.TrimSpace(cfg.KeyPrefix)
 	if keyPrefix == "" {
-		keyPrefix = defaultKeyPrefix
+		keyPrefix = DefaultKeyPrefix
 	}
 
 	now := cfg.Now
@@ -167,8 +146,8 @@ func execTokenBucketScript(ctx context.Context, client valkey.Client, script *va
 
 	return Decision{
 		Allowed:    allowedValue == 1,
-		Remaining:  maxInt(0, int(remainingValue)),
-		RetryAfter: time.Duration(maxInt64(0, retryAfterMilliseconds)) * time.Millisecond,
+		Remaining:  max(0, int(remainingValue)),
+		RetryAfter: time.Duration(max(int64(0), retryAfterMilliseconds)) * time.Millisecond,
 	}, nil
 }
 
@@ -184,25 +163,6 @@ func IdleTTL(policy Policy) time.Duration {
 
 	secondsToFull := float64(policy.Burst) / policy.RequestsPerSecond
 	ttl := time.Duration(math.Ceil(secondsToFull * 2 * float64(time.Second)))
-	if ttl < minKeyTTL {
-		return minKeyTTL
-	}
 
-	return ttl
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-
-	return b
+	return max(ttl, minKeyTTL)
 }

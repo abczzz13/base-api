@@ -1,4 +1,4 @@
-package middleware
+package responsewriter
 
 import (
 	"bufio"
@@ -7,37 +7,42 @@ import (
 	"net/http"
 )
 
-type observedResponseWriter struct {
+// ObservedResponseWriter wraps an http.ResponseWriter to track status code and bytes written.
+type ObservedResponseWriter struct {
 	http.ResponseWriter
-	statusCode   int
-	bytesWritten int64
+	StatusCode   int
+	BytesWritten int64
 	written      bool
 }
 
-func newObservedResponseWriter(w http.ResponseWriter) *observedResponseWriter {
-	return &observedResponseWriter{
+// NewObservedResponseWriter creates a new observed response writer.
+func NewObservedResponseWriter(w http.ResponseWriter) *ObservedResponseWriter {
+	return &ObservedResponseWriter{
 		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+		StatusCode:     http.StatusOK,
 	}
 }
 
-func ensureObservedResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *observedResponseWriter) {
-	if observedRW, ok := findObservedResponseWriter(w); ok {
+// EnsureObservedResponseWriter returns an existing ObservedResponseWriter from the chain,
+// or wraps the given writer in a new one.
+func EnsureObservedResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *ObservedResponseWriter) {
+	if observedRW, ok := FindObservedResponseWriter(w); ok {
 		return w, observedRW
 	}
 
-	observedRW := newObservedResponseWriter(w)
+	observedRW := NewObservedResponseWriter(w)
 	return observedRW, observedRW
 }
 
-func findObservedResponseWriter(w http.ResponseWriter) (*observedResponseWriter, bool) {
+// FindObservedResponseWriter searches the response writer chain for an ObservedResponseWriter.
+func FindObservedResponseWriter(w http.ResponseWriter) (*ObservedResponseWriter, bool) {
 	type responseWriterUnwrapper interface {
 		Unwrap() http.ResponseWriter
 	}
 
 	current := w
 	for current != nil {
-		if observedRW, ok := current.(*observedResponseWriter); ok {
+		if observedRW, ok := current.(*ObservedResponseWriter); ok {
 			return observedRW, true
 		}
 
@@ -57,47 +62,47 @@ func findObservedResponseWriter(w http.ResponseWriter) (*observedResponseWriter,
 	return nil, false
 }
 
-func (rw *observedResponseWriter) WriteHeader(code int) {
+func (rw *ObservedResponseWriter) WriteHeader(code int) {
 	if isInformationalStatus(code) {
 		rw.ResponseWriter.WriteHeader(code)
 		return
 	}
 
 	if !rw.written {
-		rw.statusCode = code
+		rw.StatusCode = code
 		rw.written = true
 	}
 
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-func (rw *observedResponseWriter) Write(b []byte) (int, error) {
+func (rw *ObservedResponseWriter) Write(b []byte) (int, error) {
 	if !rw.written {
 		rw.WriteHeader(http.StatusOK)
 	}
 
 	n, err := rw.ResponseWriter.Write(b)
-	rw.bytesWritten += int64(n)
+	rw.BytesWritten += int64(n)
 	return n, err
 }
 
-func (rw *observedResponseWriter) ReadFrom(r io.Reader) (int64, error) {
+func (rw *ObservedResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	if !rw.written {
 		rw.WriteHeader(http.StatusOK)
 	}
 
 	if readerFrom, ok := rw.ResponseWriter.(io.ReaderFrom); ok {
 		n, err := readerFrom.ReadFrom(r)
-		rw.bytesWritten += n
+		rw.BytesWritten += n
 		return n, err
 	}
 
 	n, err := io.Copy(rw.ResponseWriter, r)
-	rw.bytesWritten += n
+	rw.BytesWritten += n
 	return n, err
 }
 
-func (rw *observedResponseWriter) Flush() {
+func (rw *ObservedResponseWriter) Flush() {
 	if !rw.written {
 		rw.WriteHeader(http.StatusOK)
 	}
@@ -107,7 +112,7 @@ func (rw *observedResponseWriter) Flush() {
 	}
 }
 
-func (rw *observedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+func (rw *ObservedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := rw.ResponseWriter.(http.Hijacker)
 	if !ok {
 		return nil, nil, http.ErrNotSupported
@@ -116,7 +121,7 @@ func (rw *observedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	return hijacker.Hijack()
 }
 
-func (rw *observedResponseWriter) Push(target string, opts *http.PushOptions) error {
+func (rw *ObservedResponseWriter) Push(target string, opts *http.PushOptions) error {
 	pusher, ok := rw.ResponseWriter.(http.Pusher)
 	if !ok {
 		return http.ErrNotSupported
@@ -125,7 +130,7 @@ func (rw *observedResponseWriter) Push(target string, opts *http.PushOptions) er
 	return pusher.Push(target, opts)
 }
 
-func (rw *observedResponseWriter) Unwrap() http.ResponseWriter {
+func (rw *ObservedResponseWriter) Unwrap() http.ResponseWriter {
 	return rw.ResponseWriter
 }
 

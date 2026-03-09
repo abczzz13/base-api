@@ -15,9 +15,8 @@ func NewChain(middlewares ...func(http.Handler) http.Handler) *Chain {
 	}
 }
 
-func (c *Chain) With(m func(http.Handler) http.Handler) *Chain {
+func (c *Chain) With(m func(http.Handler) http.Handler) {
 	c.httpMiddlewares = append(c.httpMiddlewares, m)
-	return c
 }
 
 func (c *Chain) WrapHandler(h http.Handler) http.Handler {

@@ -9,29 +9,26 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/abczzz13/base-api/internal/config"
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/publicapi"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestid"
-	"github.com/abczzz13/base-api/internal/weather"
 )
 
 func TestBaseServiceGetHealthz(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  config.Config
 		want *publicoas.HealthResponseHeaders
 	}{
 		{
 			name: "returns public safe health response",
-			cfg:  config.Config{Environment: "production"},
 			want: &publicoas.HealthResponseHeaders{Response: publicoas.HealthResponse{Status: "OK"}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := publicapi.NewService(tt.cfg, nil)
+			svc := publicapi.NewService(nil)
 			got, err := svc.GetHealthz(context.Background())
 			if err != nil {
 				t.Fatalf("GetHealthz returned error: %v", err)
@@ -134,7 +131,7 @@ func TestBaseServiceGetCurrentWeather(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := publicapi.NewService(config.Config{}, tt.weatherClient)
+			svc := publicapi.NewService(tt.weatherClient)
 			got, err := svc.GetCurrentWeather(tt.ctx, tt.params)
 
 			if tt.wantErr == nil {
@@ -187,7 +184,7 @@ func TestBaseServiceNewError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := publicapi.NewService(config.Config{}, nil)
+			svc := publicapi.NewService(nil)
 			got := svc.NewError(context.Background(), tt.err)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Fatalf("NewError mismatch (-want +got):\n%s", diff)

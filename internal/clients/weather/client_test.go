@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/abczzz13/base-api/internal/httpclient"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
-	"github.com/abczzz13/base-api/internal/outboundhttp"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
 
@@ -66,7 +66,7 @@ func TestServiceGetCurrent(t *testing.T) {
 	}))
 	t.Cleanup(geocodingServer.Close)
 
-	geocodingHTTPClient, err := outboundhttp.New(outboundhttp.Config{
+	geocodingHTTPClient, err := httpclient.New(httpclient.Config{
 		Client:  providerName + "_geocoding",
 		BaseURL: geocodingServer.URL,
 	})
@@ -74,7 +74,7 @@ func TestServiceGetCurrent(t *testing.T) {
 		t.Fatalf("create geocoding client: %v", err)
 	}
 
-	forecastHTTPClient, err := outboundhttp.New(outboundhttp.Config{
+	forecastHTTPClient, err := httpclient.New(httpclient.Config{
 		Client:          providerName + "_forecast",
 		BaseURL:         forecastServer.URL,
 		AuditRepository: forecastAuditRepo,
@@ -134,11 +134,11 @@ func TestServiceGetCurrentReturnsNotFoundWhenLocationCannotBeResolved(t *testing
 	}))
 	t.Cleanup(geocodingServer.Close)
 
-	geocodingHTTPClient, err := outboundhttp.New(outboundhttp.Config{Client: providerName + "_geocoding", BaseURL: geocodingServer.URL})
+	geocodingHTTPClient, err := httpclient.New(httpclient.Config{Client: providerName + "_geocoding", BaseURL: geocodingServer.URL})
 	if err != nil {
 		t.Fatalf("create geocoding client: %v", err)
 	}
-	forecastHTTPClient, err := outboundhttp.New(outboundhttp.Config{Client: providerName + "_forecast", BaseURL: geocodingServer.URL})
+	forecastHTTPClient, err := httpclient.New(httpclient.Config{Client: providerName + "_forecast", BaseURL: geocodingServer.URL})
 	if err != nil {
 		t.Fatalf("create forecast client: %v", err)
 	}
@@ -164,11 +164,11 @@ func TestServiceGetCurrentReturnsUpstreamError(t *testing.T) {
 	}))
 	t.Cleanup(geocodingServer.Close)
 
-	geocodingHTTPClient, err := outboundhttp.New(outboundhttp.Config{Client: providerName + "_geocoding", BaseURL: geocodingServer.URL})
+	geocodingHTTPClient, err := httpclient.New(httpclient.Config{Client: providerName + "_geocoding", BaseURL: geocodingServer.URL})
 	if err != nil {
 		t.Fatalf("create geocoding client: %v", err)
 	}
-	forecastHTTPClient, err := outboundhttp.New(outboundhttp.Config{Client: providerName + "_forecast", BaseURL: geocodingServer.URL})
+	forecastHTTPClient, err := httpclient.New(httpclient.Config{Client: providerName + "_forecast", BaseURL: geocodingServer.URL})
 	if err != nil {
 		t.Fatalf("create forecast client: %v", err)
 	}
@@ -333,12 +333,12 @@ func newTestService(
 ) *Service {
 	t.Helper()
 
-	geocodingHTTPClient, err := outboundhttp.New(outboundhttp.Config{Client: providerName + "_geocoding", BaseURL: geocodingBaseURL})
+	geocodingHTTPClient, err := httpclient.New(httpclient.Config{Client: providerName + "_geocoding", BaseURL: geocodingBaseURL})
 	if err != nil {
 		t.Fatalf("create geocoding client: %v", err)
 	}
 
-	forecastHTTPClient, err := outboundhttp.New(outboundhttp.Config{
+	forecastHTTPClient, err := httpclient.New(httpclient.Config{
 		Client:          providerName + "_forecast",
 		BaseURL:         forecastBaseURL,
 		AuditRepository: forecastAuditRepo,

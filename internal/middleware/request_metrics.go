@@ -1,28 +1,16 @@
 package middleware
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-)
 
-const (
-	requestMetricsNamespace = "base_api"
-	requestMetricsSubsystem = "http"
-
-	RequestMetricsRouteUnmatched = "unmatched"
-	RequestRejectionReasonCSRF   = "csrf"
-
-	requestMetricsServerUnknown = "unknown"
-	requestMetricsMethodUnknown = "UNKNOWN"
-	requestMetricsReasonUnknown = "unknown"
+	"github.com/abczzz13/base-api/internal/middleware/internal/responsewriter"
 )
 
 var requestSizeBuckets = []float64{
@@ -60,7 +48,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, errors.New("prometheus registerer is required")
 	}
 
-	httpRequestsTotal, err := registerCounterVec(reg, prometheus.NewCounterVec(
+	httpRequestsTotal, err := registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -73,7 +61,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register requests_total metric: %w", err)
 	}
 
-	httpRequestDurationSeconds, err := registerHistogramVec(reg, prometheus.NewHistogramVec(
+	httpRequestDurationSeconds, err := registerCollector(reg, prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -87,7 +75,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register request_duration_seconds metric: %w", err)
 	}
 
-	httpInFlightRequests, err := registerGaugeVec(reg, prometheus.NewGaugeVec(
+	httpInFlightRequests, err := registerCollector(reg, prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -100,7 +88,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register in_flight_requests metric: %w", err)
 	}
 
-	httpRequestSizeBytes, err := registerHistogramVec(reg, prometheus.NewHistogramVec(
+	httpRequestSizeBytes, err := registerCollector(reg, prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -114,7 +102,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register request_size_bytes metric: %w", err)
 	}
 
-	httpResponseSizeBytes, err := registerHistogramVec(reg, prometheus.NewHistogramVec(
+	httpResponseSizeBytes, err := registerCollector(reg, prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -128,7 +116,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register response_size_bytes metric: %w", err)
 	}
 
-	httpRecoveredPanicsTotal, err := registerCounterVec(reg, prometheus.NewCounterVec(
+	httpRecoveredPanicsTotal, err := registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -141,7 +129,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register recovered_panics_total metric: %w", err)
 	}
 
-	httpRejectedRequestsTotal, err := registerCounterVec(reg, prometheus.NewCounterVec(
+	httpRejectedRequestsTotal, err := registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -154,7 +142,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register rejected_requests_total metric: %w", err)
 	}
 
-	httpCORSPolicyDenialsTotal, err := registerCounterVec(reg, prometheus.NewCounterVec(
+	httpCORSPolicyDenialsTotal, err := registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -167,7 +155,7 @@ func NewHTTPRequestMetrics(reg prometheus.Registerer) (*HTTPRequestMetrics, erro
 		return nil, fmt.Errorf("register cors_policy_denials_total metric: %w", err)
 	}
 
-	httpRateLimitErrorsTotal, err := registerCounterVec(reg, prometheus.NewCounterVec(
+	httpRateLimitErrorsTotal, err := registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: requestMetricsNamespace,
 			Subsystem: requestMetricsSubsystem,
@@ -200,13 +188,8 @@ func RequestMetrics(metrics *HTTPRequestMetrics, cfg RequestMetricsConfig) func(
 		}
 	}
 
-	server := requestMetricsServerLabel(cfg.Server)
-	routeLabel := cfg.RouteLabel
-	if routeLabel == nil {
-		routeLabel = func(*http.Request) string {
-			return RequestMetricsRouteUnmatched
-		}
-	}
+	server := defaultServerLabel(cfg.Server)
+	routeLabel := defaultRouteLabel(cfg.RouteLabel)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +201,7 @@ func RequestMetrics(metrics *HTTPRequestMetrics, cfg RequestMetricsConfig) func(
 				route:  route,
 			}
 
-			nextWriter, rw := ensureObservedResponseWriter(w)
+			nextWriter, rw := responsewriter.EnsureObservedResponseWriter(w)
 			req := requestWithMetricsContext(r, metrics, labels)
 			req, requestBodyCounter := observeRequestBody(req)
 
@@ -229,72 +212,15 @@ func RequestMetrics(metrics *HTTPRequestMetrics, cfg RequestMetricsConfig) func(
 			startedAt := time.Now()
 			next.ServeHTTP(nextWriter, req)
 
-			statusCode := strconv.Itoa(rw.statusCode)
+			statusCode := strconv.Itoa(rw.StatusCode)
 			duration := time.Since(startedAt).Seconds()
 
 			metrics.httpRequestsTotal.WithLabelValues(server, method, route, statusCode).Inc()
 			metrics.httpRequestDurationSeconds.WithLabelValues(server, method, route, statusCode).Observe(duration)
 			metrics.httpRequestSizeBytes.WithLabelValues(server, method, route, statusCode).Observe(requestBodySizeBytes(req, requestBodyCounter))
-			metrics.httpResponseSizeBytes.WithLabelValues(server, method, route, statusCode).Observe(float64(rw.bytesWritten))
+			metrics.httpResponseSizeBytes.WithLabelValues(server, method, route, statusCode).Observe(float64(rw.BytesWritten))
 		})
 	}
-}
-
-func requestMetricsServerLabel(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return requestMetricsServerUnknown
-	}
-
-	return trimmed
-}
-
-func requestMetricsMethodLabel(r *http.Request) string {
-	if r == nil {
-		return requestMetricsMethodUnknown
-	}
-
-	return requestMetricsMethodValue(r.Method)
-}
-
-func requestMetricsMethodValue(value string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(value))
-	if normalized == "" {
-		return requestMetricsMethodUnknown
-	}
-
-	switch normalized {
-	case http.MethodConnect,
-		http.MethodDelete,
-		http.MethodGet,
-		http.MethodHead,
-		http.MethodOptions,
-		http.MethodPatch,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodTrace:
-		return normalized
-	default:
-		return requestMetricsMethodUnknown
-	}
-}
-
-func requestMetricsRouteLabel(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return RequestMetricsRouteUnmatched
-	}
-
-	return trimmed
-}
-
-func requestMetricsReasonLabel(reason string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(reason))
-	if trimmed == "" {
-		return requestMetricsReasonUnknown
-	}
-
-	return trimmed
 }
 
 func requestBodySizeBytes(r *http.Request, counter *countingReadCloser) float64 {
@@ -336,137 +262,21 @@ func (r *countingReadCloser) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func observeRecoveredPanic(r *http.Request) {
-	metricsCtx := requestMetricsContextFromRequest(r)
-	if metricsCtx.metrics == nil {
-		return
-	}
-
-	metricsCtx.metrics.httpRecoveredPanicsTotal.WithLabelValues(metricsCtx.labels.server, metricsCtx.labels.method, metricsCtx.labels.route).Inc()
-}
-
-func observeRejectedRequest(r *http.Request, reason string) {
-	metricsCtx := requestMetricsContextFromRequest(r)
-	if metricsCtx.metrics == nil {
-		return
-	}
-
-	reasonLabel := requestMetricsReasonLabel(reason)
-	metricsCtx.metrics.httpRejectedRequestsTotal.WithLabelValues(metricsCtx.labels.server, metricsCtx.labels.method, metricsCtx.labels.route, reasonLabel).Inc()
-}
-
-func observeCORSPolicyDenial(r *http.Request) {
-	metricsCtx := requestMetricsContextFromRequest(r)
-	if metricsCtx.metrics == nil {
-		return
-	}
-
-	metricsCtx.metrics.httpCORSPolicyDenialsTotal.WithLabelValues(metricsCtx.labels.server, metricsCtx.labels.method, metricsCtx.labels.route).Inc()
-}
-
-func observeRateLimitBackendError(r *http.Request) {
-	metricsCtx := requestMetricsContextFromRequest(r)
-	if metricsCtx.metrics == nil {
-		return
-	}
-
-	metricsCtx.metrics.httpRateLimitErrorsTotal.WithLabelValues(metricsCtx.labels.server, metricsCtx.labels.method, metricsCtx.labels.route).Inc()
-}
-
-type requestMetricsLabels struct {
-	server string
-	method string
-	route  string
-}
-
-type requestMetricsContext struct {
-	metrics *HTTPRequestMetrics
-	labels  requestMetricsLabels
-}
-
-type requestMetricsContextKey struct{}
-
-func requestWithMetricsContext(r *http.Request, metrics *HTTPRequestMetrics, labels requestMetricsLabels) *http.Request {
-	if r == nil {
-		return r
-	}
-
-	ctx := context.WithValue(r.Context(), requestMetricsContextKey{}, requestMetricsContext{metrics: metrics, labels: labels})
-	return r.WithContext(ctx)
-}
-
-func requestMetricsContextFromRequest(r *http.Request) requestMetricsContext {
-	metricsCtx := requestMetricsContext{
-		labels: requestMetricsLabels{
-			server: requestMetricsServerUnknown,
-			method: requestMetricsMethodLabel(r),
-			route:  RequestMetricsRouteUnmatched,
-		},
-	}
-
-	if r == nil {
-		return metricsCtx
-	}
-
-	if fromContext, ok := r.Context().Value(requestMetricsContextKey{}).(requestMetricsContext); ok {
-		metricsCtx.metrics = fromContext.metrics
-		metricsCtx.labels.server = requestMetricsServerLabel(fromContext.labels.server)
-		metricsCtx.labels.method = requestMetricsMethodValue(fromContext.labels.method)
-		metricsCtx.labels.route = requestMetricsRouteLabel(fromContext.labels.route)
-	}
-
-	return metricsCtx
-}
-
-func registerCounterVec(reg prometheus.Registerer, collector *prometheus.CounterVec) (*prometheus.CounterVec, error) {
+func registerCollector[T prometheus.Collector](reg prometheus.Registerer, collector T) (T, error) {
 	if err := reg.Register(collector); err != nil {
 		var alreadyRegisteredErr prometheus.AlreadyRegisteredError
 		if !errors.As(err, &alreadyRegisteredErr) {
-			return nil, err
+			var zero T
+			return zero, err
 		}
 
-		existingCollector, ok := alreadyRegisteredErr.ExistingCollector.(*prometheus.CounterVec)
+		existing, ok := alreadyRegisteredErr.ExistingCollector.(T)
 		if !ok {
-			return nil, fmt.Errorf("existing collector has type %T, want *prometheus.CounterVec", alreadyRegisteredErr.ExistingCollector)
+			var zero T
+			return zero, fmt.Errorf("existing collector has type %T, want %T", alreadyRegisteredErr.ExistingCollector, collector)
 		}
 
-		return existingCollector, nil
-	}
-
-	return collector, nil
-}
-
-func registerGaugeVec(reg prometheus.Registerer, collector *prometheus.GaugeVec) (*prometheus.GaugeVec, error) {
-	if err := reg.Register(collector); err != nil {
-		var alreadyRegisteredErr prometheus.AlreadyRegisteredError
-		if !errors.As(err, &alreadyRegisteredErr) {
-			return nil, err
-		}
-
-		existingCollector, ok := alreadyRegisteredErr.ExistingCollector.(*prometheus.GaugeVec)
-		if !ok {
-			return nil, fmt.Errorf("existing collector has type %T, want *prometheus.GaugeVec", alreadyRegisteredErr.ExistingCollector)
-		}
-
-		return existingCollector, nil
-	}
-
-	return collector, nil
-}
-
-func registerHistogramVec(reg prometheus.Registerer, collector *prometheus.HistogramVec) (*prometheus.HistogramVec, error) {
-	if err := reg.Register(collector); err != nil {
-		var alreadyRegisteredErr prometheus.AlreadyRegisteredError
-		if !errors.As(err, &alreadyRegisteredErr) {
-			return nil, err
-		}
-
-		existingCollector, ok := alreadyRegisteredErr.ExistingCollector.(*prometheus.HistogramVec)
-		if !ok {
-			return nil, fmt.Errorf("existing collector has type %T, want *prometheus.HistogramVec", alreadyRegisteredErr.ExistingCollector)
-		}
-
-		return existingCollector, nil
+		return existing, nil
 	}
 
 	return collector, nil

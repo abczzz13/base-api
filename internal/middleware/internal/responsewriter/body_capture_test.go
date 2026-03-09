@@ -1,4 +1,4 @@
-package middleware
+package responsewriter
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestBodyCaptureResponseWriterTracksWrites(t *testing.T) {
-	rw := newBodyCaptureResponseWriter(&permissiveResponseWriter{}, 4)
+	rw := NewBodyCaptureResponseWriter(&permissiveResponseWriter{}, 4)
 
 	if _, err := rw.Write([]byte("hello")); err != nil {
 		t.Fatalf("write body: %v", err)
@@ -27,7 +27,7 @@ func TestBodyCaptureResponseWriterTracksWrites(t *testing.T) {
 
 func TestBodyCaptureResponseWriterReadFromCapturesBody(t *testing.T) {
 	underlying := &readerFromResponseWriter{}
-	rw := newBodyCaptureResponseWriter(underlying, 5)
+	rw := NewBodyCaptureResponseWriter(underlying, 5)
 
 	if _, err := io.Copy(rw, bytes.NewBufferString("payload")); err != nil {
 		t.Fatalf("copy response body: %v", err)

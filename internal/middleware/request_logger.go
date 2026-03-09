@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/abczzz13/base-api/internal/middleware/internal/responsewriter"
 )
 
 func RequestLogger() func(http.Handler) http.Handler {
@@ -12,7 +14,7 @@ func RequestLogger() func(http.Handler) http.Handler {
 			start := time.Now()
 			ctx := r.Context()
 
-			nextWriter, rw := ensureObservedResponseWriter(w)
+			nextWriter, rw := responsewriter.EnsureObservedResponseWriter(w)
 
 			slog.With(
 				slog.String("method", r.Method),
@@ -27,7 +29,7 @@ func RequestLogger() func(http.Handler) http.Handler {
 			slog.With(
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
-				slog.Int("status", rw.statusCode),
+				slog.Int("status", rw.StatusCode),
 				slog.Int64("duration_ms", duration.Milliseconds()),
 			).InfoContext(ctx, "request completed")
 		})

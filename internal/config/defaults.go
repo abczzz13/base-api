@@ -8,6 +8,7 @@ import (
 	"github.com/abczzz13/base-api/internal/publicroute"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
+	"github.com/abczzz13/base-api/internal/valkey"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 	defaultRateLimitTimeout        = 100 * time.Millisecond
 	defaultRateLimitDefaultRPS     = 5.0
 	defaultRateLimitDefaultBurst   = 10
-	defaultRateLimitKeyPrefix      = "base-api:ratelimit"
+	defaultRateLimitKeyPrefix      = ratelimit.DefaultKeyPrefix
 	defaultDBMinConns              = int32(0)
 	defaultDBMaxConns              = int32(20)
 	defaultDBMaxConnLifetime       = time.Hour
@@ -61,11 +62,12 @@ func defaultConfig() Config {
 		CSRF: CSRFConfig{
 			Enabled: true,
 		},
+		Valkey: valkey.Config{Mode: valkey.ModeStandalone},
 		RateLimit: RateLimitConfig{
-			Enabled:  defaultRateLimitEnabled,
-			FailOpen: defaultRateLimitFailOpen,
-			Timeout:  defaultRateLimitTimeout,
-			Valkey:   ratelimit.ValkeyConfig{Mode: ratelimit.ValkeyModeStandalone, KeyPrefix: defaultRateLimitKeyPrefix},
+			Enabled:   defaultRateLimitEnabled,
+			FailOpen:  defaultRateLimitFailOpen,
+			Timeout:   defaultRateLimitTimeout,
+			KeyPrefix: defaultRateLimitKeyPrefix,
 			DefaultPolicy: ratelimit.Policy{
 				RequestsPerSecond: defaultRateLimitDefaultRPS,
 				Burst:             defaultRateLimitDefaultBurst,

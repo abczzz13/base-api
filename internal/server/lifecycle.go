@@ -1,4 +1,4 @@
-package httpserver
+package server
 
 import (
 	"context"
@@ -77,7 +77,7 @@ func NewHTTPServer(cfg config.Config, addr string, handler http.Handler) *http.S
 // BindListeners binds TCP listeners for all servers.
 func BindListeners(ctx context.Context, servers []ManagedServer) error {
 	for i := range servers {
-		listener, err := net.Listen("tcp", servers[i].Server.Addr)
+		listener, err := net.Listen("tcp4", servers[i].Server.Addr)
 		if err != nil {
 			closeBoundListeners(servers)
 			return fmt.Errorf("create %s listener: %w", servers[i].Name, err)
@@ -119,16 +119,29 @@ func RunServers(servers []ManagedServer) <-chan Result {
 	return resultsCh
 }
 
-// ShutdownServers gracefully shuts down all servers.
+// ShutdownServers gracefully shuts down all servers concurrently
+// within a shared timeout.
 func ShutdownServers(servers []ManagedServer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultServerShutdownTimeout)
+	defer cancel()
+
+	var mu sync.Mutex
+	var errs []error
+	var wg sync.WaitGroup
+
 	for _, server := range servers {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), defaultServerShutdownTimeout)
-		if err := server.Server.Shutdown(shutdownCtx); err != nil {
-			shutdownCancel()
-			return fmt.Errorf("shutdown %s server: %w", server.Name, err)
-		}
-		shutdownCancel()
+		wg.Add(1)
+		go func(s ManagedServer) {
+			defer wg.Done()
+			if err := s.Server.Shutdown(ctx); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("shutdown %s server: %w", s.Name, err))
+				mu.Unlock()
+			}
+		}(server)
 	}
 
-	return nil
+	wg.Wait()
+
+	return errors.Join(errs...)
 }

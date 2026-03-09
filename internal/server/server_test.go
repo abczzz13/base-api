@@ -17,6 +17,7 @@ import (
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
+	"github.com/abczzz13/base-api/internal/valkey"
 )
 
 func TestRunReturnsErrorWhenConfigValidationFails(t *testing.T) {
@@ -124,11 +125,11 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 		ClientIP: config.ClientIPConfig{
 			TrustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
 		},
+		Valkey: valkey.Config{Mode: valkey.ModeCluster, Addrs: []string{"valkey-a.internal:6379", "valkey-b.internal:6379"}},
 		RateLimit: config.RateLimitConfig{
 			Enabled:  true,
 			FailOpen: true,
 			Timeout:  100 * time.Millisecond,
-			Valkey:   ratelimit.ValkeyConfig{Mode: ratelimit.ValkeyModeCluster, Addrs: []string{"valkey-a.internal:6379", "valkey-b.internal:6379"}},
 			DefaultPolicy: ratelimit.Policy{
 				RequestsPerSecond: 7.5,
 				Burst:             11,
@@ -179,8 +180,8 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 		"rate_limit_timeout":                  float64((100 * time.Millisecond).Nanoseconds()),
 		"rate_limit_default_rps":              7.5,
 		"rate_limit_default_burst":            float64(11),
-		"rate_limit_valkey_mode":              string(ratelimit.ValkeyModeCluster),
-		"rate_limit_valkey_addrs_count":       float64(2),
+		"valkey_mode":                         string(valkey.ModeCluster),
+		"valkey_addrs_count":                  float64(2),
 		"rate_limit_route_overrides_count":    float64(1),
 		"request_audit_enabled":               true,
 		"weather_enabled":                     true,
@@ -205,6 +206,50 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 	}
 	if _, ok := entry["weather_api_key"]; ok {
 		t.Fatal("startup configuration log must not include weather_api_key")
+	}
+}
+
+func TestSetupRateLimiterReturnsUnavailableStoreWhenFailOpen(t *testing.T) {
+	cleanup := NewCleanupStack()
+
+	store, err := setupRateLimiter(context.Background(), config.Config{
+		RateLimit: config.RateLimitConfig{
+			Enabled:  true,
+			FailOpen: true,
+		},
+		Valkey: valkey.Config{Mode: "invalid"},
+	}, cleanup)
+	if err != nil {
+		t.Fatalf("setupRateLimiter returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("expected unavailable fallback store")
+	}
+
+	_, err = store.Allow(context.Background(), "public:getHealthz:192.0.2.10", ratelimit.Policy{RequestsPerSecond: 1, Burst: 1})
+	if !errors.Is(err, ratelimit.ErrStartupBackendUnavailable) {
+		t.Fatalf("Allow error mismatch: want wrapped ErrStartupBackendUnavailable, got %v", err)
+	}
+}
+
+func TestSetupRateLimiterReturnsErrorWhenFailClosed(t *testing.T) {
+	cleanup := NewCleanupStack()
+
+	store, err := setupRateLimiter(context.Background(), config.Config{
+		RateLimit: config.RateLimitConfig{
+			Enabled:  true,
+			FailOpen: false,
+		},
+		Valkey: valkey.Config{Mode: "invalid"},
+	}, cleanup)
+	if err == nil {
+		t.Fatal("expected setupRateLimiter error")
+	}
+	if store != nil {
+		t.Fatalf("expected nil store on fail-closed setup error, got %T", store)
+	}
+	if !strings.Contains(err.Error(), "configure Valkey client") {
+		t.Fatalf("error mismatch: got %v", err)
 	}
 }
 

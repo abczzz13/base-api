@@ -10,18 +10,19 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
-	"github.com/abczzz13/base-api/internal/httpserver"
+	"github.com/abczzz13/base-api/internal/httpclient"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
-	"github.com/abczzz13/base-api/internal/outboundhttp"
 	"github.com/abczzz13/base-api/internal/postgres"
 	"github.com/abczzz13/base-api/internal/publicapi"
+	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/telemetry"
+	"github.com/abczzz13/base-api/internal/valkey"
 	"github.com/abczzz13/base-api/internal/version"
-	"github.com/abczzz13/base-api/internal/weather"
 )
 
 func Run(
@@ -59,7 +60,7 @@ func Run(
 		slog.String("go_version", buildMetadata.GoVersion),
 	)
 
-	runtimeCleanup := httpserver.NewCleanupStack()
+	runtimeCleanup := NewCleanupStack()
 	defer runtimeCleanup.Run()
 
 	tracingEnabled, shutdownTracing := telemetry.Setup(
@@ -97,38 +98,14 @@ func Run(
 	)
 	runtimeCleanup.Add(shutdownOutboundAuditRepository)
 
-	rateLimiter, shutdownRateLimiter, err := setupRateLimiter(ctx, cfg.RateLimit)
+	rateLimiter, err := setupRateLimiter(ctx, cfg, runtimeCleanup)
 	if err != nil {
 		return err
 	}
-	runtimeCleanup.Add(shutdownRateLimiter)
 
-	var weatherClient weather.Client
-	if cfg.Weather.Enabled() {
-		weatherGeocodingClient, err := outboundhttp.New(outboundhttp.Config{
-			Client:          "open_meteo_geocoding",
-			BaseURL:         cfg.Weather.GeocodingBaseURL,
-			Metrics:         metricsRuntime.httpClient,
-			AuditRepository: outboundAuditRepository,
-		})
-		if err != nil {
-			return fmt.Errorf("create weather geocoding client: %w", err)
-		}
-
-		weatherForecastClient, err := outboundhttp.New(outboundhttp.Config{
-			Client:          "open_meteo_forecast",
-			BaseURL:         cfg.Weather.ForecastBaseURL,
-			Metrics:         metricsRuntime.httpClient,
-			AuditRepository: outboundAuditRepository,
-		})
-		if err != nil {
-			return fmt.Errorf("create weather forecast client: %w", err)
-		}
-
-		weatherClient, err = weather.New(weatherGeocodingClient, weatherForecastClient, cfg.Weather.APIKey, cfg.Weather.Timeout)
-		if err != nil {
-			return fmt.Errorf("configure weather integration: %w", err)
-		}
+	weatherClient, err := setupWeatherClient(cfg, metricsRuntime.httpClient, outboundAuditRepository)
+	if err != nil {
+		return err
 	}
 
 	publicHandler, err := publicapi.NewHandler(cfg, publicapi.Dependencies{
@@ -150,25 +127,25 @@ func Run(
 		return fmt.Errorf("create infra API handler: %w", err)
 	}
 
-	servers := []httpserver.ManagedServer{
+	servers := []ManagedServer{
 		{
 			Name:   "public",
-			Server: httpserver.NewHTTPServer(cfg, cfg.Address, publicHandler),
+			Server: NewHTTPServer(cfg, cfg.Address, publicHandler),
 		},
 		{
 			Name:   "infra",
-			Server: httpserver.NewHTTPServer(cfg, cfg.InfraAddress, infraHandler),
+			Server: NewHTTPServer(cfg, cfg.InfraAddress, infraHandler),
 		},
 	}
 
-	if err := httpserver.BindListeners(ctx, servers); err != nil {
+	if err := BindListeners(ctx, servers); err != nil {
 		return err
 	}
 
-	serverResults := httpserver.RunServers(servers)
+	serverResults := RunServers(servers)
 
 	shutdownAll := func() error {
-		shutdownErr := httpserver.ShutdownServers(servers)
+		shutdownErr := ShutdownServers(servers)
 		runtimeCleanup.Run()
 		return shutdownErr
 	}
@@ -219,8 +196,8 @@ func logStartupConfiguration(ctx context.Context, cfg config.Config) {
 		slog.Duration("rate_limit_timeout", cfg.RateLimit.Timeout),
 		slog.Float64("rate_limit_default_rps", cfg.RateLimit.DefaultPolicy.RequestsPerSecond),
 		slog.Int("rate_limit_default_burst", cfg.RateLimit.DefaultPolicy.Burst),
-		slog.String("rate_limit_valkey_mode", string(cfg.RateLimit.Valkey.NormalizedMode())),
-		slog.Int("rate_limit_valkey_addrs_count", len(cfg.RateLimit.Valkey.Addrs)),
+		slog.String("valkey_mode", string(cfg.Valkey.NormalizedMode())),
+		slog.Int("valkey_addrs_count", len(cfg.Valkey.Addrs)),
 		slog.Int("rate_limit_route_overrides_count", len(cfg.RateLimit.RouteOverrides)),
 		slog.Bool("request_audit_enabled", cfg.RequestAudit.IsEnabled()),
 		slog.Bool("tracing_enabled", cfg.OTEL.TracingEnabled),
@@ -253,4 +230,80 @@ func clientIPTrustedProxySource(cfg config.ClientIPConfig) string {
 	}
 
 	return "configured"
+}
+
+func setupRateLimiter(ctx context.Context, cfg config.Config, cleanup *CleanupStack) (ratelimit.Store, error) {
+	if !cfg.RateLimit.IsEnabled() {
+		return nil, nil
+	}
+
+	valkeyClient, err := valkey.NewClient(cfg.Valkey)
+	if err != nil {
+		if !cfg.RateLimit.FailOpen {
+			return nil, fmt.Errorf("configure Valkey client: %w", err)
+		}
+
+		slog.WarnContext(ctx, "valkey client unavailable; starting in fail-open mode",
+			slog.Any("error", err),
+			slog.String("mode", string(cfg.Valkey.NormalizedMode())),
+			slog.Int("address_count", len(cfg.Valkey.Addrs)),
+		)
+
+		return startupUnavailableRateLimiter(err), nil
+	}
+
+	cleanup.Add(func() { valkeyClient.Close() })
+
+	store, err := ratelimit.NewValkeyStore(ratelimit.ValkeyStoreConfig{
+		Client:    valkeyClient,
+		KeyPrefix: cfg.RateLimit.KeyPrefix,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure rate limiter: %w", err)
+	}
+
+	return store, nil
+}
+
+func startupUnavailableRateLimiter(err error) ratelimit.Store {
+	return ratelimit.StoreFunc(func(context.Context, string, ratelimit.Policy) (ratelimit.Decision, error) {
+		if err == nil {
+			return ratelimit.Decision{}, ratelimit.ErrStartupBackendUnavailable
+		}
+
+		return ratelimit.Decision{}, fmt.Errorf("%w: %w", ratelimit.ErrStartupBackendUnavailable, err)
+	})
+}
+
+func setupWeatherClient(cfg config.Config, httpMetrics *httpclient.Metrics, auditRepo outboundaudit.Repository) (weather.Client, error) {
+	if !cfg.Weather.Enabled() {
+		return nil, nil
+	}
+
+	geocodingClient, err := httpclient.New(httpclient.Config{
+		Client:          "open_meteo_geocoding",
+		BaseURL:         cfg.Weather.GeocodingBaseURL,
+		Metrics:         httpMetrics,
+		AuditRepository: auditRepo,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create weather geocoding client: %w", err)
+	}
+
+	forecastClient, err := httpclient.New(httpclient.Config{
+		Client:          "open_meteo_forecast",
+		BaseURL:         cfg.Weather.ForecastBaseURL,
+		Metrics:         httpMetrics,
+		AuditRepository: auditRepo,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create weather forecast client: %w", err)
+	}
+
+	weatherClient, err := weather.New(geocodingClient, forecastClient, cfg.Weather.APIKey, cfg.Weather.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("configure weather integration: %w", err)
+	}
+
+	return weatherClient, nil
 }

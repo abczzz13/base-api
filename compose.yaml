@@ -18,7 +18,7 @@ services:
       - .env
     environment:
       API_ADDR: ${API_ADDR:-0.0.0.0:8080}
-      API_RATE_LIMIT_VALKEY_ADDRS: valkey:6379
+      API_VALKEY_ADDRS: valkey:6379
       DB_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-base_api}?sslmode=disable
     depends_on:
       postgres:

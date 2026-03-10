@@ -13,6 +13,11 @@ func TestNormalizeStatusCode(t *testing.T) {
 		want  int32
 	}{
 		{
+			name:  "negative is normalized to zero",
+			value: -1,
+			want:  0,
+		},
+		{
 			name:  "zero is preserved for transport errors",
 			value: 0,
 			want:  0,

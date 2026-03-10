@@ -121,6 +121,32 @@ func TestNewPublicHandlerDisablesRequestAuditMiddleware(t *testing.T) {
 	}
 }
 
+func TestNewPublicHandlerAllowsNilAuditStoreWhenAuditDisabled(t *testing.T) {
+	requestMetrics, _ := newRequestMetricsForTest(t)
+	auditEnabled := false
+
+	handler, err := publicapi.NewHandler(config.Config{
+		Environment: "test",
+		RequestAudit: config.RequestAuditConfig{
+			Enabled: &auditEnabled,
+		},
+	}, publicapi.Dependencies{
+		RequestMetrics:         requestMetrics,
+		RequestAuditRepository: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
 func newRequestMetricsForTest(t *testing.T) (*middleware.HTTPRequestMetrics, *prometheus.Registry) {
 	t.Helper()
 

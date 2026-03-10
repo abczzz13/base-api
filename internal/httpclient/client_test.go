@@ -138,6 +138,48 @@ func TestServiceDoRecordsMetricsAndAudit(t *testing.T) {
 	}
 }
 
+func TestServiceDoSkipsOutboundAuditWhenRepositoryIsNil(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	registry := prometheus.NewRegistry()
+	metrics, err := NewMetrics(registry)
+	if err != nil {
+		t.Fatalf("NewMetrics returned error: %v", err)
+	}
+
+	service, err := New(Config{
+		Client:  "billing",
+		BaseURL: server.URL,
+		Metrics: metrics,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	req, err := service.NewRequest(context.Background(), "get_invoice", http.MethodGet, "/invoices/123", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+
+	resp, err := service.Do(req)
+	if err != nil {
+		t.Fatalf("Do returned error: %v", err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	if got := testutil.ToFloat64(metrics.requestsTotal.WithLabelValues("billing", "get_invoice", http.MethodGet, "204", resultSuccess)); got != 1 {
+		t.Fatalf("requests_total mismatch: want 1, got %v", got)
+	}
+	if got := testutil.ToFloat64(metrics.inFlightRequests.WithLabelValues("billing", "get_invoice", http.MethodGet)); got != 0 {
+		t.Fatalf("in_flight_requests mismatch: want 0, got %v", got)
+	}
+}
+
 func TestServiceDoRecordsTransportErrors(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	metrics, err := NewMetrics(registry)

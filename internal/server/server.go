@@ -84,16 +84,18 @@ func Run(
 	}
 	runtimeCleanup.Add(databaseShutdown)
 
-	baseRequestAuditRepository := requestaudit.NewPostgresRepository(database)
-	requestAuditRepository, shutdownRequestAuditRepository := requestaudit.NewAsyncRepositoryWithConfig(
-		baseRequestAuditRepository,
-		requestaudit.AsyncConfig{Metrics: metricsRuntime.audit},
-	)
-	runtimeCleanup.Add(shutdownRequestAuditRepository)
+	var requestAuditRepository requestaudit.Repository
+	if cfg.RequestAudit.IsEnabled() {
+		var shutdownRequestAuditRepository func()
+		requestAuditRepository, shutdownRequestAuditRepository = requestaudit.NewAsyncRepository(
+			requestaudit.NewPostgresRepository(database),
+			requestaudit.AsyncConfig{Metrics: metricsRuntime.audit},
+		)
+		runtimeCleanup.Add(shutdownRequestAuditRepository)
+	}
 
-	baseOutboundAuditRepository := outboundaudit.NewPostgresRepository(database)
-	outboundAuditRepository, shutdownOutboundAuditRepository := outboundaudit.NewAsyncRepositoryWithConfig(
-		baseOutboundAuditRepository,
+	outboundAuditRepository, shutdownOutboundAuditRepository := outboundaudit.NewAsyncRepository(
+		outboundaudit.NewPostgresRepository(database),
 		outboundaudit.AsyncConfig{Metrics: metricsRuntime.outboundAudit},
 	)
 	runtimeCleanup.Add(shutdownOutboundAuditRepository)

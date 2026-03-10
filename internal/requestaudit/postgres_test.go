@@ -1,7 +1,6 @@
 package requestaudit
 
 import (
-	"net/http"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -14,19 +13,29 @@ func TestNormalizeStatusCode(t *testing.T) {
 		want  int32
 	}{
 		{
-			name:  "below range defaults to internal server error",
+			name:  "negative value normalizes to zero",
+			value: -1,
+			want:  0,
+		},
+		{
+			name:  "zero normalizes to zero",
+			value: 0,
+			want:  0,
+		},
+		{
+			name:  "below range normalizes to zero",
 			value: 99,
-			want:  http.StatusInternalServerError,
+			want:  0,
 		},
 		{
 			name:  "minimum valid code is preserved",
-			value: http.StatusContinue,
-			want:  http.StatusContinue,
+			value: 100,
+			want:  100,
 		},
 		{
 			name:  "known status code is preserved",
-			value: http.StatusCreated,
-			want:  http.StatusCreated,
+			value: 201,
+			want:  201,
 		},
 		{
 			name:  "highest valid non-standard status code is preserved",

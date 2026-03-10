@@ -37,10 +37,11 @@ var absoluteURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
 type Config struct {
 	Client string
 	// BaseURL must be an origin-only absolute URL, such as https://api.example.com.
-	BaseURL               string
-	Timeout               time.Duration
-	MaxBodyBytes          int
-	Metrics               *Metrics
+	BaseURL      string
+	Timeout      time.Duration
+	MaxBodyBytes int
+	Metrics      *Metrics
+	// AuditRepository is optional; when nil, outbound audit logging is disabled.
 	AuditRepository       outboundaudit.Repository
 	HTTPClient            *http.Client
 	Transport             http.RoundTripper

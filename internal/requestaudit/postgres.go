@@ -2,12 +2,10 @@ package requestaudit
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"net/netip"
 	"strings"
 
+	"github.com/abczzz13/base-api/internal/asyncaudit"
 	"github.com/abczzz13/base-api/internal/dbsqlc"
 )
 
@@ -31,20 +29,17 @@ func (repo *postgresRepository) StoreRequestAudit(ctx context.Context, record Re
 		return nil
 	}
 
-	requestHeaders, err := marshalHeaders(record.RequestHeaders)
+	requestHeaders, err := asyncaudit.MarshalHeaders(record.RequestHeaders)
 	if err != nil {
 		return err
 	}
 
-	responseHeaders, err := marshalHeaders(record.ResponseHeaders)
+	responseHeaders, err := asyncaudit.MarshalHeaders(record.ResponseHeaders)
 	if err != nil {
 		return err
 	}
 
-	durationMs := record.Duration.Milliseconds()
-	if durationMs < 0 {
-		durationMs = 0
-	}
+	durationMs := max(record.Duration.Milliseconds(), 0)
 
 	clientIP := parseClientIP(record.ClientIP)
 
@@ -59,61 +54,32 @@ func (repo *postgresRepository) StoreRequestAudit(ctx context.Context, record Re
 		Proto:                 record.Proto,
 		StatusCode:            normalizeStatusCode(record.StatusCode),
 		DurationMs:            durationMs,
-		RequestSizeBytes:      normalizeSizeBytes(record.RequestSizeBytes),
-		ResponseSizeBytes:     normalizeSizeBytes(record.ResponseSizeBytes),
+		RequestSizeBytes:      asyncaudit.NormalizeSizeBytes(record.RequestSizeBytes),
+		ResponseSizeBytes:     asyncaudit.NormalizeSizeBytes(record.ResponseSizeBytes),
 		RemoteAddr:            record.RemoteAddr,
 		ClientIp:              clientIP,
 		UserAgent:             record.UserAgent,
 		RequestHeaders:        requestHeaders,
 		ResponseHeaders:       responseHeaders,
-		RequestBody:           jsonColumn(record.RequestBody),
-		ResponseBody:          jsonColumn(record.ResponseBody),
+		RequestBody:           asyncaudit.JSONColumn(record.RequestBody),
+		ResponseBody:          asyncaudit.JSONColumn(record.ResponseBody),
 		RequestBodyTruncated:  record.RequestBodyTruncated,
 		ResponseBodyTruncated: record.ResponseBodyTruncated,
-		RequestID:             record.RequestID,
-		TraceID:               record.TraceID,
-		SpanID:                record.SpanID,
+		RequestID:             strings.TrimSpace(record.RequestID),
+		TraceID:               strings.TrimSpace(record.TraceID),
+		SpanID:                strings.TrimSpace(record.SpanID),
 	})
 }
 
-func marshalHeaders(headers map[string][]string) ([]byte, error) {
-	if headers == nil {
-		return []byte("{}"), nil
-	}
-
-	encoded, err := json.Marshal(headers)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request audit headers: %w", err)
-	}
-
-	return encoded, nil
-}
-
-func jsonColumn(value []byte) []byte {
-	if len(value) == 0 {
-		return nil
-	}
-
-	return value
-}
-
 func normalizeStatusCode(value int) int32 {
-	if value < http.StatusContinue {
-		return http.StatusInternalServerError
+	if value < 100 {
+		return 0
 	}
 	if value > 599 {
 		return 599
 	}
 
 	return int32(value)
-}
-
-func normalizeSizeBytes(value int64) int64 {
-	if value < 0 {
-		return 0
-	}
-
-	return value
 }
 
 func parseClientIP(value string) *netip.Addr {

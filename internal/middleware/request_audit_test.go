@@ -527,12 +527,8 @@ func (e *countingClientIPExtractor) Calls() int {
 	return e.calls
 }
 
-func (store *recordingRequestAuditStore) StoreRequestAudit(ctx context.Context, record requestaudit.Record) error {
+func (store *recordingRequestAuditStore) StoreRequestAudit(_ context.Context, record requestaudit.Record) error {
 	store.records = append(store.records, record)
-
-	if _, ok := ctx.Deadline(); !ok {
-		return errors.New("request audit store context is missing deadline")
-	}
 
 	return store.err
 }

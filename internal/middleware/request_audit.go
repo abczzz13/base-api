@@ -24,7 +24,6 @@ import (
 
 const (
 	requestAuditDefaultMaxBodyBytes = 64 * 1024
-	requestAuditDefaultWriteTimeout = 250 * time.Millisecond
 	requestAuditRedactedValue       = "[REDACTED]"
 	requestAuditInvalidQueryValue   = "_redacted=invalid_query"
 )
@@ -40,7 +39,6 @@ type RequestAuditConfig struct {
 	Server            string
 	RouteLabel        func(*http.Request) string
 	MaxBodyBytes      int
-	WriteTimeout      time.Duration
 	TrustedProxyCIDRs []netip.Prefix
 }
 
@@ -57,11 +55,6 @@ func RequestAudit(cfg RequestAuditConfig) func(http.Handler) http.Handler {
 	maxBodyBytes := cfg.MaxBodyBytes
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = requestAuditDefaultMaxBodyBytes
-	}
-
-	writeTimeout := cfg.WriteTimeout
-	if writeTimeout <= 0 {
-		writeTimeout = requestAuditDefaultWriteTimeout
 	}
 
 	clientIPResolver := cfg.ClientIPResolver
@@ -104,9 +97,7 @@ func RequestAudit(cfg RequestAuditConfig) func(http.Handler) http.Handler {
 				},
 			)
 
-			auditCtx, cancelAudit := requestAuditWriteContext(requestContextOrBackground(r), writeTimeout)
-			defer cancelAudit()
-			if err := cfg.Store.StoreRequestAudit(auditCtx, record); err != nil {
+			if err := cfg.Store.StoreRequestAudit(requestContextOrBackground(r), record); err != nil {
 				slog.WarnContext(requestContextOrBackground(r), "request audit insert failed",
 					slog.String("method", record.Method),
 					slog.String("path", record.Path),
@@ -161,15 +152,6 @@ func requestAuditRecordFromRequest(r *http.Request, inputs requestAuditRecordInp
 	}
 
 	return record
-}
-
-func requestAuditWriteContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	writeCtx := context.WithoutCancel(ctx)
-	if timeout <= 0 {
-		return writeCtx, func() {}
-	}
-
-	return context.WithTimeout(writeCtx, timeout)
 }
 
 func requestContextOrBackground(r *http.Request) context.Context {
@@ -290,11 +272,7 @@ func requestAuditRequestSizeBytes(r *http.Request, capture *bodycapture.Buffer) 
 }
 
 func requestAuditNonNegativeSize(value int64) int64 {
-	if value < 0 {
-		return 0
-	}
-
-	return value
+	return max(value, 0)
 }
 
 func requestAuditHeaders(r *http.Request) http.Header {

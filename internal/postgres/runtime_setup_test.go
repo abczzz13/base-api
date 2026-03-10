@@ -114,7 +114,7 @@ func TestSetupDatabaseStopsRetriesWhenContextCanceled(t *testing.T) {
 	}
 }
 
-func TestIsRetryableDatabaseOpenError(t *testing.T) {
+func TestIsRetryableError(t *testing.T) {
 	startupDeadlineExceededCtx := expiredContextWithDeadline(t)
 
 	tests := []struct {
@@ -160,6 +160,12 @@ func TestIsRetryableDatabaseOpenError(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "lock not available SQLSTATE is retryable",
+			ctx:  context.Background(),
+			err:  &pgconn.PgError{Code: "55P03"},
+			want: true,
+		},
+		{
 			name: "syntax SQLSTATE is not retryable",
 			ctx:  context.Background(),
 			err:  &pgconn.PgError{Code: "42601"},
@@ -175,64 +181,8 @@ func TestIsRetryableDatabaseOpenError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsRetryableOpenError(tt.ctx, tt.err); got != tt.want {
-				t.Fatalf("isRetryableDatabaseOpenError mismatch: want %t, got %t", tt.want, got)
-			}
-		})
-	}
-}
-
-func TestIsRetryableDatabaseMigrateError(t *testing.T) {
-	startupDeadlineExceededCtx := expiredContextWithDeadline(t)
-
-	tests := []struct {
-		name string
-		ctx  context.Context
-		err  error
-		want bool
-	}{
-		{
-			name: "per-attempt deadline exceeded is retryable",
-			ctx:  context.Background(),
-			err:  context.DeadlineExceeded,
-			want: true,
-		},
-		{
-			name: "startup context deadline exceeded is not retryable",
-			ctx:  startupDeadlineExceededCtx,
-			err:  context.DeadlineExceeded,
-			want: false,
-		},
-		{
-			name: "context canceled is not retryable",
-			ctx:  context.Background(),
-			err:  context.Canceled,
-			want: false,
-		},
-		{
-			name: "lock not available SQLSTATE is retryable",
-			ctx:  context.Background(),
-			err:  &pgconn.PgError{Code: "55P03"},
-			want: true,
-		},
-		{
-			name: "syntax SQLSTATE is not retryable",
-			ctx:  context.Background(),
-			err:  &pgconn.PgError{Code: "42601"},
-			want: false,
-		},
-		{
-			name: "generic errors are treated as retryable",
-			ctx:  context.Background(),
-			err:  errors.New("temporary migration failure"),
-			want: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsRetryableMigrateError(tt.ctx, tt.err); got != tt.want {
-				t.Fatalf("isRetryableDatabaseMigrateError mismatch: want %t, got %t", tt.want, got)
+			if got := isRetryableError(tt.ctx, tt.err); got != tt.want {
+				t.Fatalf("isRetryableError mismatch: want %t, got %t", tt.want, got)
 			}
 		})
 	}
@@ -294,8 +244,8 @@ func TestDatabaseStartupRetryDelay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := StartupRetryDelay(tt.initial, tt.max, tt.attempt); got != tt.want {
-				t.Fatalf("databaseStartupRetryDelay mismatch: want %s, got %s", tt.want, got)
+			if got := startupRetryDelay(tt.initial, tt.max, tt.attempt); got != tt.want {
+				t.Fatalf("databasestartupRetryDelay mismatch: want %s, got %s", tt.want, got)
 			}
 		})
 	}

@@ -21,7 +21,7 @@ func SetupRuntime(
 	cfg config.DBConfig,
 	metricsRegisterer prometheus.Registerer,
 ) (*pgxpool.Pool, func(), error) {
-	if err := ValidateRuntimeInputs(cfg, metricsRegisterer); err != nil {
+	if err := validateRuntimeInputs(cfg, metricsRegisterer); err != nil {
 		return nil, nil, err
 	}
 
@@ -47,7 +47,7 @@ func SetupRuntime(
 			return nil, nil, fmt.Errorf("database startup failed after %d attempt(s): %w", maxAttempts, err)
 		}
 
-		retryIn := StartupRetryDelay(cfg.StartupBackoffInitial, cfg.StartupBackoffMax, attempt)
+		retryIn := startupRetryDelay(cfg.StartupBackoffInitial, cfg.StartupBackoffMax, attempt)
 		slog.WarnContext(
 			ctx,
 			"database startup attempt failed",
@@ -69,8 +69,7 @@ func SetupRuntime(
 	return nil, nil, errors.New("database startup failed")
 }
 
-// ValidateRuntimeInputs validates setup input dependencies.
-func ValidateRuntimeInputs(cfg config.DBConfig, metricsRegisterer prometheus.Registerer) error {
+func validateRuntimeInputs(cfg config.DBConfig, metricsRegisterer prometheus.Registerer) error {
 	if !cfg.Enabled() {
 		return errors.New("database URL is required")
 	}
@@ -85,37 +84,18 @@ func setupRuntimeStartupAttempt(
 	ctx context.Context,
 	cfg config.DBConfig,
 ) (*pgxpool.Pool, bool, error) {
-	pool, retryable, err := openRuntimePool(ctx, cfg)
+	pool, err := Open(ctx, cfg)
 	if err != nil {
-		return nil, retryable, err
+		return nil, isRetryableError(ctx, err), fmt.Errorf("open PostgreSQL pool: %w", err)
 	}
 
 	if cfg.MigrateOnStartup {
 		if err := runStartupMigrations(ctx, cfg.MigrateTimeout, pool); err != nil {
 			pool.Close()
-			return nil, IsRetryableMigrateError(ctx, err), fmt.Errorf("run PostgreSQL migrations: %w", err)
+			return nil, isRetryableError(ctx, err), fmt.Errorf("run PostgreSQL migrations: %w", err)
 		}
 	} else {
 		slog.InfoContext(ctx, "database startup migrations disabled")
-	}
-
-	return pool, false, nil
-}
-
-func openRuntimePool(
-	ctx context.Context,
-	cfg config.DBConfig,
-) (*pgxpool.Pool, bool, error) {
-	pool, err := Open(ctx, cfg)
-	if err != nil {
-		if pool != nil {
-			pool.Close()
-		}
-
-		return nil, IsRetryableOpenError(ctx, err), fmt.Errorf("open PostgreSQL pool: %w", err)
-	}
-	if pool == nil {
-		return nil, false, errors.New("database pool is required")
 	}
 
 	return pool, false, nil
@@ -151,8 +131,7 @@ func finalizeRuntimeSetup(
 	}, nil
 }
 
-// IsRetryableOpenError reports whether database open failure should be retried.
-func IsRetryableOpenError(ctx context.Context, err error) bool {
+func isRetryableError(ctx context.Context, err error) bool {
 	if err == nil {
 		return false
 	}
@@ -171,33 +150,6 @@ func IsRetryableOpenError(ctx context.Context, err error) bool {
 		return false
 	}
 	if errors.Is(err, ErrDatabaseURLRequired) || errors.Is(err, ErrInvalidDatabaseURL) {
-		return false
-	}
-
-	if retryable, ok := classifyRetryableError(err); ok {
-		return retryable
-	}
-
-	return true
-}
-
-// IsRetryableMigrateError reports whether migration failure should be retried.
-func IsRetryableMigrateError(ctx context.Context, err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		if ctx != nil && ctx.Err() != nil {
-			return false
-		}
-
-		return true
-	}
-
-	if ctx != nil && errors.Is(ctx.Err(), context.Canceled) {
 		return false
 	}
 
@@ -234,8 +186,7 @@ func isRetryableSQLState(code string) bool {
 	}
 }
 
-// StartupRetryDelay computes capped exponential backoff for startup retries.
-func StartupRetryDelay(initial, maxDelay time.Duration, attempt int32) time.Duration {
+func startupRetryDelay(initial, maxDelay time.Duration, attempt int32) time.Duration {
 	if initial <= 0 || attempt < 1 {
 		return 0
 	}

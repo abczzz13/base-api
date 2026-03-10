@@ -17,5 +17,7 @@
 // transient database open/migration failures during startup.
 //
 // API_READYZ_TIMEOUT is an overall readiness budget shared across all
-// configured readiness checks.
+// configured readiness checks. When API rate limiting is configured fail-open,
+// Valkey is excluded from readiness so instances remain ready while rate
+// limiting degrades gracefully.
 package config

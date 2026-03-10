@@ -2,13 +2,9 @@ package infraapi
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 )
-
-// ErrNilReadinessChecker indicates a nil readiness checker.
-var ErrNilReadinessChecker = errors.New("readiness checker is nil")
 
 // ReadinessChecker checks whether a dependency is ready.
 type ReadinessChecker interface {
@@ -33,10 +29,6 @@ func (c namedReadinessChecker) Name() string {
 }
 
 func (c namedReadinessChecker) CheckReadiness(ctx context.Context) error {
-	if c.checker == nil {
-		return ErrNilReadinessChecker
-	}
-
 	return c.checker.CheckReadiness(ctx)
 }
 
@@ -53,38 +45,30 @@ type DatabaseReadiness interface {
 	Ping(context.Context) error
 }
 
+// ValkeyReadiness is the readiness contract for Valkey dependencies.
+type ValkeyReadiness interface {
+	Ping(context.Context) error
+}
+
 // DefaultReadinessCheckers builds default readiness checks from configured dependencies.
-func DefaultReadinessCheckers(database DatabaseReadiness) []ReadinessChecker {
-	if database == nil {
-		return nil
+func DefaultReadinessCheckers(database DatabaseReadiness, valkey ValkeyReadiness) []ReadinessChecker {
+	var checkers []ReadinessChecker
+	if database != nil {
+		checkers = append(checkers, WithReadinessCheckerName("database", ReadinessCheckerFunc(database.Ping)))
 	}
-
-	return []ReadinessChecker{
-		WithReadinessCheckerName("database", ReadinessCheckerFunc(func(ctx context.Context) error {
-			if err := database.Ping(ctx); err != nil {
-				return fmt.Errorf("database readiness check failed: %w", err)
-			}
-
-			return nil
-		})),
+	if valkey != nil {
+		checkers = append(checkers, WithReadinessCheckerName("valkey", ReadinessCheckerFunc(valkey.Ping)))
 	}
+	return checkers
 }
 
 // ReadinessCheckerLogName returns a stable log identifier for a readiness checker.
 func ReadinessCheckerLogName(checker ReadinessChecker, index int) string {
-	if checker == nil {
-		return fmt.Sprintf("checker_%d", index)
+	if named, ok := checker.(interface{ Name() string }); ok {
+		if name := strings.TrimSpace(named.Name()); name != "" {
+			return name
+		}
 	}
 
-	namedChecker, ok := checker.(interface{ Name() string })
-	if !ok {
-		return fmt.Sprintf("checker_%d", index)
-	}
-
-	name := strings.TrimSpace(namedChecker.Name())
-	if name == "" {
-		return fmt.Sprintf("checker_%d", index)
-	}
-
-	return name
+	return fmt.Sprintf("checker_%d", index)
 }

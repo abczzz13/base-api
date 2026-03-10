@@ -212,7 +212,7 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 func TestSetupRateLimiterReturnsUnavailableStoreWhenFailOpen(t *testing.T) {
 	cleanup := NewCleanupStack()
 
-	store, err := setupRateLimiter(context.Background(), config.Config{
+	store, valkeyPinger, err := setupRateLimiter(context.Background(), config.Config{
 		RateLimit: config.RateLimitConfig{
 			Enabled:  true,
 			FailOpen: true,
@@ -225,6 +225,9 @@ func TestSetupRateLimiterReturnsUnavailableStoreWhenFailOpen(t *testing.T) {
 	if store == nil {
 		t.Fatal("expected unavailable fallback store")
 	}
+	if valkeyPinger != nil {
+		t.Fatal("expected nil valkey pinger in fail-open mode")
+	}
 
 	_, err = store.Allow(context.Background(), "public:getHealthz:192.0.2.10", ratelimit.Policy{RequestsPerSecond: 1, Burst: 1})
 	if !errors.Is(err, ratelimit.ErrStartupBackendUnavailable) {
@@ -235,7 +238,7 @@ func TestSetupRateLimiterReturnsUnavailableStoreWhenFailOpen(t *testing.T) {
 func TestSetupRateLimiterReturnsErrorWhenFailClosed(t *testing.T) {
 	cleanup := NewCleanupStack()
 
-	store, err := setupRateLimiter(context.Background(), config.Config{
+	store, valkeyPinger, err := setupRateLimiter(context.Background(), config.Config{
 		RateLimit: config.RateLimitConfig{
 			Enabled:  true,
 			FailOpen: false,
@@ -248,8 +251,63 @@ func TestSetupRateLimiterReturnsErrorWhenFailClosed(t *testing.T) {
 	if store != nil {
 		t.Fatalf("expected nil store on fail-closed setup error, got %T", store)
 	}
+	if valkeyPinger != nil {
+		t.Fatal("expected nil valkey pinger on fail-closed setup error")
+	}
 	if !strings.Contains(err.Error(), "configure Valkey client") {
 		t.Fatalf("error mismatch: got %v", err)
+	}
+}
+
+func TestValkeyReadinessDependency(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		p    *valkey.PingableClient
+		want bool
+	}{
+		{
+			name: "omits Valkey when rate limiting is disabled",
+			cfg:  config.Config{},
+			p:    &valkey.PingableClient{},
+			want: false,
+		},
+		{
+			name: "omits Valkey when rate limiting is fail-open",
+			cfg: config.Config{RateLimit: config.RateLimitConfig{
+				Enabled:  true,
+				FailOpen: true,
+			}},
+			p:    &valkey.PingableClient{},
+			want: false,
+		},
+		{
+			name: "omits typed nil Valkey pinger",
+			cfg: config.Config{RateLimit: config.RateLimitConfig{
+				Enabled:  true,
+				FailOpen: false,
+			}},
+			p:    nil,
+			want: false,
+		},
+		{
+			name: "includes Valkey when rate limiting is fail-closed",
+			cfg: config.Config{RateLimit: config.RateLimitConfig{
+				Enabled:  true,
+				FailOpen: false,
+			}},
+			p:    &valkey.PingableClient{},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := valkeyReadinessDependency(tt.cfg, tt.p)
+			if (got != nil) != tt.want {
+				t.Fatalf("readiness dependency presence mismatch: want %t, got %t", tt.want, got != nil)
+			}
+		})
 	}
 }
 

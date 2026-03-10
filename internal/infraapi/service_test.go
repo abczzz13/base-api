@@ -76,20 +76,6 @@ func TestInfraServiceGetReadyz(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "returns not ready when checker is nil",
-			cfg:  config.Config{ReadyzTimeout: time.Second},
-			checkers: []infraapi.ReadinessChecker{
-				nil,
-			},
-			wantErr: &infraoas.DefaultErrorStatusCodeWithHeaders{
-				StatusCode: 503,
-				Response: infraoas.ErrorResponse{
-					Code:    "not_ready",
-					Message: "service is not ready",
-				},
-			},
-		},
 	}
 
 	for _, tt := range tests {

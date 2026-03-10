@@ -1,6 +1,7 @@
 package valkey
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +40,21 @@ func (c Config) ValidateMode() error {
 	default:
 		return fmt.Errorf("unsupported mode %q", c.Mode)
 	}
+}
+
+// PingableClient wraps a Client with a Ping method for readiness checks.
+type PingableClient struct {
+	Client
+}
+
+// NewPingableClient wraps a Client so it satisfies readiness-check interfaces.
+func NewPingableClient(c Client) *PingableClient {
+	return &PingableClient{Client: c}
+}
+
+// Ping sends a PING command to Valkey and returns any error.
+func (p *PingableClient) Ping(ctx context.Context) error {
+	return p.Do(ctx, p.B().Ping().Build()).Error()
 }
 
 func NewClient(cfg Config) (Client, error) {

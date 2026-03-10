@@ -100,7 +100,7 @@ func Run(
 	)
 	runtimeCleanup.Add(shutdownOutboundAuditRepository)
 
-	rateLimiter, err := setupRateLimiter(ctx, cfg, runtimeCleanup)
+	rateLimiter, valkeyPinger, err := setupRateLimiter(ctx, cfg, runtimeCleanup)
 	if err != nil {
 		return err
 	}
@@ -124,6 +124,7 @@ func Run(
 		RequestMetrics:  metricsRuntime.http,
 		MetricsGatherer: metricsRuntime.registry,
 		Database:        database,
+		Valkey:          valkeyReadinessDependency(cfg, valkeyPinger),
 	})
 	if err != nil {
 		return fmt.Errorf("create infra API handler: %w", err)
@@ -234,15 +235,15 @@ func clientIPTrustedProxySource(cfg config.ClientIPConfig) string {
 	return "configured"
 }
 
-func setupRateLimiter(ctx context.Context, cfg config.Config, cleanup *CleanupStack) (ratelimit.Store, error) {
+func setupRateLimiter(ctx context.Context, cfg config.Config, cleanup *CleanupStack) (ratelimit.Store, *valkey.PingableClient, error) {
 	if !cfg.RateLimit.IsEnabled() {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	valkeyClient, err := valkey.NewClient(cfg.Valkey)
 	if err != nil {
 		if !cfg.RateLimit.FailOpen {
-			return nil, fmt.Errorf("configure Valkey client: %w", err)
+			return nil, nil, fmt.Errorf("configure Valkey client: %w", err)
 		}
 
 		slog.WarnContext(ctx, "valkey client unavailable; starting in fail-open mode",
@@ -251,7 +252,7 @@ func setupRateLimiter(ctx context.Context, cfg config.Config, cleanup *CleanupSt
 			slog.Int("address_count", len(cfg.Valkey.Addrs)),
 		)
 
-		return startupUnavailableRateLimiter(err), nil
+		return startupUnavailableRateLimiter(err), nil, nil
 	}
 
 	cleanup.Add(func() { valkeyClient.Close() })
@@ -261,10 +262,18 @@ func setupRateLimiter(ctx context.Context, cfg config.Config, cleanup *CleanupSt
 		KeyPrefix: cfg.RateLimit.KeyPrefix,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("configure rate limiter: %w", err)
+		return nil, nil, fmt.Errorf("configure rate limiter: %w", err)
 	}
 
-	return store, nil
+	return store, valkey.NewPingableClient(valkeyClient), nil
+}
+
+func valkeyReadinessDependency(cfg config.Config, pinger *valkey.PingableClient) infraapi.ValkeyReadiness {
+	if pinger == nil || !cfg.RateLimit.IsEnabled() || cfg.RateLimit.FailOpen {
+		return nil
+	}
+
+	return pinger
 }
 
 func startupUnavailableRateLimiter(err error) ratelimit.Store {

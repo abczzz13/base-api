@@ -23,9 +23,16 @@ type Service struct {
 
 // NewService creates a new infra API service.
 func NewService(cfg config.Config, readinessCheckers ...ReadinessChecker) *Service {
+	filtered := make([]ReadinessChecker, 0, len(readinessCheckers))
+	for _, c := range readinessCheckers {
+		if c != nil {
+			filtered = append(filtered, c)
+		}
+	}
+
 	return &Service{
 		cfg:               cfg,
-		readinessCheckers: readinessCheckers,
+		readinessCheckers: filtered,
 	}
 }
 
@@ -42,24 +49,9 @@ func (s *Service) GetReadyz(ctx context.Context) (*geninfra.ProbeResponseHeaders
 	defer cancel()
 
 	for idx, checker := range s.readinessCheckers {
-		if checker == nil {
-			checkerName := ReadinessCheckerLogName(checker, idx)
-			slog.WarnContext(
-				ctx,
-				"readiness check failed",
-				slog.String("checker", checkerName),
-				slog.Int("checker_index", idx),
-				slog.Any("error", ErrNilReadinessChecker),
-			)
-			return nil, apierrors.New(http.StatusServiceUnavailable, "not_ready", "service is not ready").WithContext(ctx).InfraOASDefault()
-		}
-
 		if err := checker.CheckReadiness(checkCtx); err != nil {
-			checkerName := ReadinessCheckerLogName(checker, idx)
-			slog.WarnContext(
-				ctx,
-				"readiness check failed",
-				slog.String("checker", checkerName),
+			slog.WarnContext(ctx, "readiness check failed",
+				slog.String("checker", ReadinessCheckerLogName(checker, idx)),
 				slog.Int("checker_index", idx),
 				slog.Any("error", err),
 			)

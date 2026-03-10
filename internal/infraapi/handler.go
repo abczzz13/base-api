@@ -19,6 +19,7 @@ type Dependencies struct {
 	RequestMetrics  *middleware.HTTPRequestMetrics
 	MetricsGatherer prometheus.Gatherer
 	Database        DatabaseReadiness
+	Valkey          ValkeyReadiness
 }
 
 // NewHandler creates the fully wrapped infra API HTTP handler.
@@ -30,7 +31,7 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 		return nil, errors.New("metrics gatherer dependency is required")
 	}
 
-	infraService := NewService(cfg, DefaultReadinessCheckers(deps.Database)...)
+	infraService := NewService(cfg, DefaultReadinessCheckers(deps.Database, deps.Valkey)...)
 
 	infraAPI, err := geninfra.NewServer(infraService, geninfra.WithErrorHandler(apierrors.OgenErrorHandler))
 	if err != nil {

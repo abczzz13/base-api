@@ -10,7 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/abczzz13/base-api/internal/middleware/internal/responsewriter"
+	"github.com/abczzz13/base-api/internal/httpcapture"
 )
 
 var requestSizeBuckets = []float64{
@@ -201,7 +201,7 @@ func RequestMetrics(metrics *HTTPRequestMetrics, cfg RequestMetricsConfig) func(
 				route:  route,
 			}
 
-			nextWriter, rw := responsewriter.EnsureObservedResponseWriter(w)
+			nextWriter, rw := httpcapture.EnsureObservedResponseWriter(w)
 			req := requestWithMetricsContext(r, metrics, labels)
 			req, requestBodyCounter := observeRequestBody(req)
 

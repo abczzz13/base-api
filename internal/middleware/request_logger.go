@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/abczzz13/base-api/internal/middleware/internal/responsewriter"
+	"github.com/abczzz13/base-api/internal/httpcapture"
 )
 
 func RequestLogger() func(http.Handler) http.Handler {
@@ -14,7 +14,7 @@ func RequestLogger() func(http.Handler) http.Handler {
 			start := time.Now()
 			ctx := r.Context()
 
-			nextWriter, rw := responsewriter.EnsureObservedResponseWriter(w)
+			nextWriter, rw := httpcapture.EnsureObservedResponseWriter(w)
 
 			slog.With(
 				slog.String("method", r.Method),

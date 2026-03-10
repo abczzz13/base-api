@@ -1,4 +1,4 @@
-package responsewriter
+package httpcapture
 
 import (
 	"bufio"

@@ -1,4 +1,4 @@
-package bodycapture
+package httpcapture
 
 import (
 	"testing"

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -15,9 +14,8 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/abczzz13/base-api/internal/bodycapture"
 	"github.com/abczzz13/base-api/internal/clientip"
-	"github.com/abczzz13/base-api/internal/middleware/internal/responsewriter"
+	"github.com/abczzz13/base-api/internal/httpcapture"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
@@ -66,19 +64,19 @@ func RequestAudit(cfg RequestAuditConfig) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r, _ = clientIPResolver.ResolveStrict(r)
 
-			nextWriter, observedRW := responsewriter.EnsureObservedResponseWriter(w)
-			responseBodyCapture := responsewriter.NewBodyCaptureResponseWriter(nextWriter, maxBodyBytes)
+			nextWriter, observedRW := httpcapture.EnsureObservedResponseWriter(w)
+			responseBodyCapture := httpcapture.NewBodyCaptureResponseWriter(nextWriter, maxBodyBytes)
 
-			var requestBodyCapture *requestAuditBodyCaptureReadCloser
+			var requestBodyCapture *httpcapture.CapturingReadCloser
 			if r != nil && r.Body != nil {
-				requestBodyCapture = newRequestAuditBodyCaptureReadCloser(r.Body, maxBodyBytes)
+				requestBodyCapture = httpcapture.NewCapturingReadCloser(r.Body, maxBodyBytes)
 				r.Body = requestBodyCapture
 			}
 
 			startedAt := time.Now()
 			next.ServeHTTP(responseBodyCapture, r)
 
-			var requestCaptureBuffer *bodycapture.Buffer
+			var requestCaptureBuffer *httpcapture.Buffer
 			if requestBodyCapture != nil {
 				requestCaptureBuffer = &requestBodyCapture.Buffer
 			}
@@ -115,8 +113,8 @@ type requestAuditRecordInputs struct {
 	statusCode           int
 	duration             time.Duration
 	responseSizeBytes    int64
-	requestBodyCapture   *bodycapture.Buffer
-	responseBodyCapture  *bodycapture.Buffer
+	requestBodyCapture   *httpcapture.Buffer
+	responseBodyCapture  *httpcapture.Buffer
 	responseHeaderSource http.Header
 }
 
@@ -259,7 +257,7 @@ func requestAuditUserAgent(r *http.Request) string {
 	return strings.TrimSpace(r.UserAgent())
 }
 
-func requestAuditRequestSizeBytes(r *http.Request, capture *bodycapture.Buffer) int64 {
+func requestAuditRequestSizeBytes(r *http.Request, capture *httpcapture.Buffer) int64 {
 	if r != nil && r.ContentLength >= 0 {
 		return r.ContentLength
 	}
@@ -434,7 +432,7 @@ func requestAuditNormalizeKey(value string) string {
 	return builder.String()
 }
 
-func requestAuditBodyBytes(capture *bodycapture.Buffer) []byte {
+func requestAuditBodyBytes(capture *httpcapture.Buffer) []byte {
 	if capture == nil {
 		return nil
 	}
@@ -442,31 +440,10 @@ func requestAuditBodyBytes(capture *bodycapture.Buffer) []byte {
 	return capture.Bytes()
 }
 
-func requestAuditBodyTruncated(capture *bodycapture.Buffer) bool {
+func requestAuditBodyTruncated(capture *httpcapture.Buffer) bool {
 	if capture == nil {
 		return false
 	}
 
 	return capture.Truncated()
-}
-
-type requestAuditBodyCaptureReadCloser struct {
-	io.ReadCloser
-	bodycapture.Buffer
-}
-
-func newRequestAuditBodyCaptureReadCloser(body io.ReadCloser, maxBytes int) *requestAuditBodyCaptureReadCloser {
-	return &requestAuditBodyCaptureReadCloser{
-		ReadCloser: body,
-		Buffer:     bodycapture.NewBuffer(maxBytes),
-	}
-}
-
-func (capture *requestAuditBodyCaptureReadCloser) Read(p []byte) (int, error) {
-	n, err := capture.ReadCloser.Read(p)
-	if n > 0 {
-		capture.Capture(p[:n])
-	}
-
-	return n, err
 }

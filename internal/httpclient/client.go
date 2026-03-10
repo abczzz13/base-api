@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/abczzz13/base-api/internal/bodycapture"
+	"github.com/abczzz13/base-api/internal/httpcapture"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
@@ -322,9 +322,9 @@ func (t *instrumentedTransport) RoundTrip(req *http.Request) (*http.Response, er
 		stripTraceContextHeaders(req.Header)
 	}
 
-	var requestCapture *capturingReadCloser
+	var requestCapture *httpcapture.CapturingReadCloser
 	if req.Body != nil {
-		requestCapture = newCapturingReadCloser(req.Body, t.maxBodyBytes)
+		requestCapture = httpcapture.NewCapturingReadCloser(req.Body, t.maxBodyBytes)
 		req.Body = requestCapture
 	}
 
@@ -356,7 +356,7 @@ func (t *instrumentedTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return resp, nil
 	}
 
-	responseCapture := newCapturingReadCloser(resp.Body, t.maxBodyBytes)
+	responseCapture := httpcapture.NewCapturingReadCloser(resp.Body, t.maxBodyBytes)
 	resp.Body = &auditedResponseBody{
 		reader: responseCapture,
 		finalize: func(readErr error) {
@@ -372,8 +372,8 @@ func (t *instrumentedTransport) finalize(
 	labels metricLabels,
 	startedAt time.Time,
 	resp *http.Response,
-	requestCapture *capturingReadCloser,
-	responseCapture *capturingReadCloser,
+	requestCapture *httpcapture.CapturingReadCloser,
+	responseCapture *httpcapture.CapturingReadCloser,
 	err error,
 ) {
 	duration := time.Since(startedAt)
@@ -454,33 +454,8 @@ func stripTraceContextHeaders(headers http.Header) {
 	headers.Del("Baggage")
 }
 
-type capturingReadCloser struct {
-	io.ReadCloser
-	captureState *bodycapture.Buffer
-}
-
-func newCapturingReadCloser(body io.ReadCloser, maxBytes int) *capturingReadCloser {
-	buf := bodycapture.NewBuffer(maxBytes)
-	return &capturingReadCloser{
-		ReadCloser:   body,
-		captureState: &buf,
-	}
-}
-
-func (capture *capturingReadCloser) Read(p []byte) (int, error) {
-	n, err := capture.ReadCloser.Read(p)
-	if n > 0 {
-		capture.captureState.Capture(p[:n])
-	}
-	if errors.Is(err, io.EOF) {
-		capture.captureState.MarkComplete()
-	}
-
-	return n, err
-}
-
 type auditedResponseBody struct {
-	reader   *capturingReadCloser
+	reader   *httpcapture.CapturingReadCloser
 	finalize func(error)
 	once     sync.Once
 }
@@ -622,7 +597,7 @@ func responseContentLength(resp *http.Response) int64 {
 	return resp.ContentLength
 }
 
-func requestSizeBytes(req *http.Request, capture *capturingReadCloser) int64 {
+func requestSizeBytes(req *http.Request, capture *httpcapture.CapturingReadCloser) int64 {
 	if req != nil && req.ContentLength >= 0 {
 		return req.ContentLength
 	}
@@ -630,10 +605,10 @@ func requestSizeBytes(req *http.Request, capture *capturingReadCloser) int64 {
 		return 0
 	}
 
-	return capture.captureState.TotalBytes()
+	return capture.TotalBytes()
 }
 
-func responseSizeBytes(resp *http.Response, capture *capturingReadCloser) int64 {
+func responseSizeBytes(resp *http.Response, capture *httpcapture.CapturingReadCloser) int64 {
 	if resp != nil && resp.ContentLength >= 0 {
 		return resp.ContentLength
 	}
@@ -641,7 +616,7 @@ func responseSizeBytes(resp *http.Response, capture *capturingReadCloser) int64 
 		return 0
 	}
 
-	return capture.captureState.TotalBytes()
+	return capture.TotalBytes()
 }
 
 func responseStatusCode(resp *http.Response) int {
@@ -658,32 +633,32 @@ func responseStatusCode(resp *http.Response) int {
 	return resp.StatusCode
 }
 
-func capturedBytes(capture *capturingReadCloser) []byte {
-	if capture == nil || capture.captureState == nil {
+func capturedBytes(capture *httpcapture.CapturingReadCloser) []byte {
+	if capture == nil {
 		return nil
 	}
 
-	return capture.captureState.Bytes()
+	return capture.Bytes()
 }
 
-func captureTruncated(contentLength int64, capture *capturingReadCloser) bool {
-	if capture == nil || capture.captureState == nil {
+func captureTruncated(contentLength int64, capture *httpcapture.CapturingReadCloser) bool {
+	if capture == nil {
 		return false
 	}
-	if capture.captureState.Truncated() {
+	if capture.Truncated() {
 		return true
 	}
-	if capture.captureState.Completed() {
+	if capture.Completed() {
 		return false
 	}
-	if contentLength == 0 && capture.captureState.TotalBytes() == 0 {
+	if contentLength == 0 && capture.TotalBytes() == 0 {
 		return false
 	}
 	if contentLength > 0 {
-		return capture.captureState.TotalBytes() < contentLength
+		return capture.TotalBytes() < contentLength
 	}
 
-	return capture.captureState.TotalBytes() > 0
+	return capture.TotalBytes() > 0
 }
 
 func errorKind(err error) string {

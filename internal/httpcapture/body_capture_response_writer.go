@@ -1,25 +1,23 @@
-package responsewriter
+package httpcapture
 
 import (
 	"bufio"
 	"io"
 	"net"
 	"net/http"
-
-	"github.com/abczzz13/base-api/internal/bodycapture"
 )
 
 // BodyCaptureResponseWriter wraps an http.ResponseWriter to capture the response body.
 type BodyCaptureResponseWriter struct {
 	http.ResponseWriter
-	bodycapture.Buffer
+	Buffer
 }
 
 // NewBodyCaptureResponseWriter creates a new body capture response writer.
 func NewBodyCaptureResponseWriter(w http.ResponseWriter, maxBytes int) *BodyCaptureResponseWriter {
 	return &BodyCaptureResponseWriter{
 		ResponseWriter: w,
-		Buffer:         bodycapture.NewBuffer(maxBytes),
+		Buffer:         NewBuffer(maxBytes),
 	}
 }
 

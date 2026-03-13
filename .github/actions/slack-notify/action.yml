@@ -50,8 +50,10 @@ runs:
         set -euo pipefail
 
         if [ -z "$INPUT_WEBHOOK_URL" ]; then
-          printf 'attempted=false\n' >> "$GITHUB_OUTPUT"
-          printf 'delivered=false\n' >> "$GITHUB_OUTPUT"
+          {
+            printf 'attempted=false\n'
+            printf 'delivered=false\n'
+          } >> "$GITHUB_OUTPUT"
           printf 'Slack webhook not configured; skipping notification.\n'
           exit 0
         fi

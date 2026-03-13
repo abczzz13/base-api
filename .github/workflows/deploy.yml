@@ -101,14 +101,16 @@ jobs:
             exit 1
           fi
 
-          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
-          printf 'run_url=%s\n' "$run_url" >> "$GITHUB_OUTPUT"
-          printf 'run_event=%s\n' "$run_event" >> "$GITHUB_OUTPUT"
-          printf 'head_branch=%s\n' "$head_branch" >> "$GITHUB_OUTPUT"
-          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          {
+            printf 'run_id=%s\n' "$run_id"
+            printf 'run_url=%s\n' "$run_url"
+            printf 'run_event=%s\n' "$run_event"
+            printf 'head_branch=%s\n' "$head_branch"
+            printf 'head_sha=%s\n' "$head_sha"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Validate / Download trusted metadata
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: publish-metadata
           github-token: ${{ github.token }}
@@ -255,11 +257,13 @@ jobs:
             fi
           fi
 
-          printf 'image_ref=%s\n' "$image_ref" >> "$GITHUB_OUTPUT"
-          printf 'source_ref=%s\n' "$source_ref" >> "$GITHUB_OUTPUT"
-          printf 'source_ref_name=%s\n' "$source_ref_name" >> "$GITHUB_OUTPUT"
-          printf 'source_type=%s\n' "$source_type" >> "$GITHUB_OUTPUT"
-          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+          {
+            printf 'image_ref=%s\n' "$image_ref"
+            printf 'source_ref=%s\n' "$source_ref"
+            printf 'source_ref_name=%s\n' "$source_ref_name"
+            printf 'source_type=%s\n' "$source_type"
+            printf 'source_sha=%s\n' "$source_sha"
+          } >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy / ${{ inputs.environment }}
@@ -272,7 +276,7 @@ jobs:
     environment: ${{ inputs.environment }}
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Setup toolchain
         uses: ./.github/actions/setup-go-just
@@ -324,7 +328,7 @@ jobs:
 
       - name: Report / Upload deploy log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: deploy-${{ inputs.environment }}
           path: artifacts/

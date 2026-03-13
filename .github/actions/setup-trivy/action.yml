@@ -1,0 +1,110 @@
+name: Setup Trivy
+description: Install and cache a pinned Trivy binary from GitHub releases.
+
+inputs:
+  version:
+    description: Trivy version to install.
+    default: v0.69.1
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve install metadata
+      id: vars
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        version="${INPUT_VERSION#v}"
+        install_dir="$HOME/.local/bin/trivy-bin"
+
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)
+            asset_platform='Linux-64bit'
+            ;;
+          Linux-ARM64)
+            asset_platform='Linux-ARM64'
+            ;;
+          macOS-X64)
+            asset_platform='macOS-64bit'
+            ;;
+          macOS-ARM64)
+            asset_platform='macOS-ARM64'
+            ;;
+          *)
+            printf '::error::Unsupported runner platform for Trivy: %s-%s\n' "$RUNNER_OS" "$RUNNER_ARCH"
+            exit 1
+            ;;
+        esac
+
+        asset_name="trivy_${version}_${asset_platform}.tar.gz"
+
+        {
+          printf 'asset_name=%s\n' "$asset_name"
+          printf 'checksum_url=%s\n' "https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_checksums.txt"
+          printf 'download_url=%s\n' "https://github.com/aquasecurity/trivy/releases/download/v${version}/${asset_name}"
+          printf 'install_dir=%s\n' "$install_dir"
+          printf 'version=%s\n' "$version"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore Trivy cache
+      id: cache
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ${{ steps.vars.outputs.install_dir }}
+        key: trivy-binary-v${{ steps.vars.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install Trivy
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
+        CHECKSUM_URL: ${{ steps.vars.outputs.checksum_url }}
+        DOWNLOAD_URL: ${{ steps.vars.outputs.download_url }}
+        INSTALL_DIR: ${{ steps.vars.outputs.install_dir }}
+      run: |
+        set -euo pipefail
+
+        tmpdir="$(mktemp -d)"
+        trap 'rm -rf "$tmpdir"' EXIT
+
+        curl -fsSL "$DOWNLOAD_URL" -o "$tmpdir/$ASSET_NAME"
+        curl -fsSL "$CHECKSUM_URL" -o "$tmpdir/checksums.txt"
+
+        checksum_line="$(grep -F "$ASSET_NAME" "$tmpdir/checksums.txt" || true)"
+        if [ -z "$checksum_line" ]; then
+          printf '::error::Missing checksum entry for %s\n' "$ASSET_NAME"
+          exit 1
+        fi
+        expected_checksum="${checksum_line%% *}"
+
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual_checksum="$(sha256sum "$tmpdir/$ASSET_NAME")"
+        elif command -v shasum >/dev/null 2>&1; then
+          actual_checksum="$(shasum -a 256 "$tmpdir/$ASSET_NAME")"
+        else
+          printf '::error::Unable to verify Trivy download; no SHA-256 tool is available.\n'
+          exit 1
+        fi
+        actual_checksum="${actual_checksum%% *}"
+
+        if [ "$actual_checksum" != "$expected_checksum" ]; then
+          printf '::error::Trivy checksum mismatch for %s\n' "$ASSET_NAME"
+          exit 1
+        fi
+
+        rm -rf "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
+
+        tar -xzf "$tmpdir/$ASSET_NAME" -C "$tmpdir"
+        install "$tmpdir/trivy" "$INSTALL_DIR/trivy"
+
+        if [ -d "$tmpdir/contrib" ]; then
+          cp -R "$tmpdir/contrib" "$INSTALL_DIR/contrib"
+        fi
+
+    - name: Add Trivy to PATH
+      shell: bash
+      run: printf '%s\n' '${{ steps.vars.outputs.install_dir }}' >> "$GITHUB_PATH"

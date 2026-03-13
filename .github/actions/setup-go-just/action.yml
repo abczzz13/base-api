@@ -23,18 +23,18 @@ runs:
   steps:
     - name: Setup Go
       if: inputs.setup-go == 'true'
-      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
       with:
         go-version-file: ${{ inputs.go-version-file }}
         cache: true
 
     - name: Setup just
       if: inputs.setup-just == 'true'
-      uses: taiki-e/install-action@d8d7bd3d6a8d4366c7cb83df6330ff0d6cd77c2e # just
+      uses: taiki-e/install-action@5ab5d1729c22acd8f798b267eadcfe5e5be6f5c2 # v2.68.27
 
     - name: Cache local tool binaries
       if: inputs.cache-tools == 'true'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: .bin
         key: ${{ runner.os }}-bin-${{ hashFiles('justfile') }}

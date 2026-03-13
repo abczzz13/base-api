@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
@@ -80,7 +80,7 @@ jobs:
 
       - name: Report / Upload logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: security-repo-scans
           path: artifacts/
@@ -96,10 +96,10 @@ jobs:
       pull-requests: read
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Verify / Review dependency changes
-        uses: actions/dependency-review-action@4901385134134e04cec5fbe5ddfe3b2c5bd5d976 # v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
 
       - name: Report / Job summary
         if: always()
@@ -119,14 +119,17 @@ jobs:
       security-events: write
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Create artifacts directory
         run: mkdir -p artifacts
 
+      - name: Prepare / Setup Trivy
+        uses: ./.github/actions/setup-trivy
+
       - name: Verify / Generate Trivy SARIF
         id: trivy_config_sarif
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: config
           scan-ref: .
@@ -135,17 +138,18 @@ jobs:
           format: sarif
           output: artifacts/trivy-config.sarif
           exit-code: "0"
+          skip-setup-trivy: true
 
       - name: Report / Upload Trivy SARIF
         if: always() && hashFiles('artifacts/trivy-config.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        uses: github/codeql-action/upload-sarif@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
         with:
           sarif_file: artifacts/trivy-config.sarif
           category: trivy-config
 
       - name: Verify / Gate on Trivy findings
         id: trivy_config_gate
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: config
           scan-ref: .
@@ -154,6 +158,7 @@ jobs:
           format: table
           output: artifacts/trivy-config.txt
           exit-code: "1"
+          skip-setup-trivy: true
 
       - name: Report / Job summary
         if: always()
@@ -171,7 +176,7 @@ jobs:
 
       - name: Report / Upload scan output
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: security-trivy-config
           path: artifacts/
@@ -188,13 +193,13 @@ jobs:
       security-events: write
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Setup toolchain
         uses: ./.github/actions/setup-go-just
 
       - name: Prepare / Initialize CodeQL
-        uses: github/codeql-action/init@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        uses: github/codeql-action/init@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
         with:
           languages: go
           config-file: ./.github/codeql/codeql-config.yml
@@ -207,7 +212,7 @@ jobs:
 
       - name: Verify / Analyze with CodeQL
         id: codeql_analyze
-        uses: github/codeql-action/analyze@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        uses: github/codeql-action/analyze@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
 
       - name: Report / Job summary
         if: always()
@@ -224,7 +229,7 @@ jobs:
 
       - name: Report / Upload build log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: security-codeql-build
           path: artifacts/

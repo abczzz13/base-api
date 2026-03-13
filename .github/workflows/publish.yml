@@ -28,10 +28,13 @@ jobs:
     outputs:
       artifact_name: ${{ steps.vars.outputs.artifact_name }}
       build_time: ${{ steps.vars.outputs.build_time }}
+      build_platforms: ${{ steps.vars.outputs.build_platforms }}
       git_branch: ${{ steps.vars.outputs.git_branch }}
       git_tag: ${{ steps.vars.outputs.git_tag }}
       image_name: ${{ steps.vars.outputs.image_name }}
       primary_image: ${{ steps.vars.outputs.primary_image }}
+      requires_qemu: ${{ steps.vars.outputs.requires_qemu }}
+      scan_matrix: ${{ steps.vars.outputs.scan_matrix }}
       source_ref: ${{ steps.vars.outputs.source_ref }}
       source_ref_name: ${{ steps.vars.outputs.source_ref_name }}
       source_repository: ${{ steps.vars.outputs.source_repository }}
@@ -58,6 +61,9 @@ jobs:
           tags=()
           git_branch=unknown
           git_tag=unknown
+          build_platforms='linux/amd64'
+          scan_matrix='[{"platform":"linux/amd64","platform_slug":"linux-amd64"}]'
+          requires_qemu=false
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             source_type=tag
@@ -88,10 +94,13 @@ jobs:
           {
             printf 'artifact_name=%s\n' "$artifact_name"
             printf 'build_time=%s\n' "$build_time"
+            printf 'build_platforms=%s\n' "$build_platforms"
             printf 'git_branch=%s\n' "$git_branch"
             printf 'git_tag=%s\n' "$git_tag"
             printf 'image_name=%s\n' "$image_name"
             printf 'primary_image=%s\n' "$primary_image"
+            printf 'requires_qemu=%s\n' "$requires_qemu"
+            printf 'scan_matrix=%s\n' "$scan_matrix"
             printf 'source_ref=%s\n' "$source_ref"
             printf 'source_ref_name=%s\n' "$source_ref_name"
             printf 'source_repository=%s\n' "$source_repository"
@@ -114,27 +123,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: linux/amd64
-            platform_slug: linux-amd64
-          - platform: linux/arm64
-            platform_slug: linux-arm64
+        include: ${{ fromJson(needs.image-metadata.outputs.scan_matrix) }}
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Create artifacts directory
         run: mkdir -p artifacts
 
       - name: Prepare / Setup QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        if: needs.image-metadata.outputs.requires_qemu == 'true'
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
       - name: Prepare / Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Build / Export scan image archive
         id: build_scan_image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
           context: .
           file: ./Dockerfile
@@ -151,9 +157,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Prepare / Setup Trivy
+        uses: ./.github/actions/setup-trivy
+
       - name: Verify / Generate Trivy SARIF
         id: image_scan_sarif
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
           input: artifacts/${{ matrix.platform_slug }}.tar
@@ -163,17 +172,18 @@ jobs:
           format: sarif
           output: artifacts/trivy-${{ matrix.platform_slug }}.sarif
           exit-code: "0"
+          skip-setup-trivy: true
 
       - name: Report / Upload Trivy SARIF
         if: always() && hashFiles(format('artifacts/trivy-{0}.sarif', matrix.platform_slug)) != ''
-        uses: github/codeql-action/upload-sarif@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        uses: github/codeql-action/upload-sarif@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
         with:
           sarif_file: artifacts/trivy-${{ matrix.platform_slug }}.sarif
           category: trivy-image-${{ matrix.platform_slug }}
 
       - name: Verify / Gate on Trivy findings
         id: image_scan_gate
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
           input: artifacts/${{ matrix.platform_slug }}.tar
@@ -202,7 +212,7 @@ jobs:
 
       - name: Report / Upload scan output
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: publish-image-scan-${{ matrix.platform_slug }}
           path: artifacts/
@@ -223,19 +233,20 @@ jobs:
       image-ref: ${{ steps.record.outputs.image_ref }}
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Create artifacts directory
         run: mkdir -p artifacts
 
       - name: Prepare / Setup QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        if: needs.image-metadata.outputs.requires_qemu == 'true'
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
       - name: Prepare / Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Prepare / Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -243,12 +254,12 @@ jobs:
 
       - name: Build / Build image
         id: build_image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
           context: .
           file: ./Dockerfile
           target: runner
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ needs.image-metadata.outputs.build_platforms }}
           push: true
           sbom: true
           tags: ${{ needs.image-metadata.outputs.tags }}
@@ -278,14 +289,17 @@ jobs:
           printf 'image_ref=%s\n' "$image_ref" >> "$GITHUB_OUTPUT"
 
       - name: Build / Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           push-to-registry: true
           subject-name: ${{ needs.image-metadata.outputs.image_name }}
           subject-digest: ${{ steps.build_image.outputs.digest }}
 
+      - name: Prepare / Setup Trivy
+        uses: ./.github/actions/setup-trivy
+
       - name: Build / Generate SBOM
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
           image-ref: ${{ steps.record.outputs.image_ref }}
@@ -293,6 +307,7 @@ jobs:
           scanners: vuln
           output: artifacts/sbom.spdx.json
           exit-code: "0"
+          skip-setup-trivy: true
 
       - name: Build / Install cosign
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
@@ -369,14 +384,14 @@ jobs:
 
       - name: Report / Upload publish artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ needs.image-metadata.outputs.artifact_name }}
           path: artifacts/
           retention-days: 14
 
       - name: Report / Upload publish metadata
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: publish-metadata
           path: artifacts/publish-metadata.json

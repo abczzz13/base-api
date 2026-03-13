@@ -9,6 +9,7 @@ gofumpt_version := "v0.9.2"
 goimports_version := "v0.42.0"
 govulncheck_version := "v1.1.4"
 gitleaks_version := "v8.30.0"
+actionlint_version := "v1.7.8"
 sqlc_version := "v1.27.0"
 goose_version := "v3.27.0"
 sqlc_docker_image := "sqlc/sqlc:1.27.0"
@@ -20,6 +21,7 @@ gofumpt := ".bin/gofumpt"
 goimports := ".bin/goimports"
 govulncheck := ".bin/govulncheck"
 gitleaks := ".bin/gitleaks"
+actionlint := ".bin/actionlint"
 sqlc := ".bin/sqlc"
 goose := ".bin/goose"
 db_migrations_dir := "db/migrations"
@@ -28,7 +30,7 @@ db_url_default := "postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=
 docker_compose := "docker compose --env-file .env"
 go_api_package := "./cmd/api"
 go_mod_mode := "-mod=vendor"
-yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows"
+yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows .github/actions"
 version := `git describe --tags --always --dirty 2>/dev/null || echo 'dev'`
 git_branch := `git branch --show-current 2>/dev/null || echo 'unknown'`
 git_commit := `git rev-parse HEAD 2>/dev/null || echo 'unknown'`
@@ -113,6 +115,10 @@ build-image: env-init
     BUILD_TIME={{quote(build_time)}} \
     {{docker_compose}} build api
 
+# Build the runtime Docker image without compose (for CI validation).
+build-image-ci:
+    docker build --target runner -t base-api:ci .
+
 build: build-go build-api build-image
 
 [script]
@@ -131,6 +137,7 @@ tools:
     GOBIN="${PWD}/{{bin_dir}}" go install golang.org/x/tools/cmd/goimports@{{goimports_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install golang.org/x/vuln/cmd/govulncheck@{{govulncheck_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/zricethezav/gitleaks/v8@{{gitleaks_version}}
+    GOBIN="${PWD}/{{bin_dir}}" go install github.com/rhysd/actionlint/cmd/actionlint@{{actionlint_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/sqlc-dev/sqlc/cmd/sqlc@{{sqlc_version}} || printf 'Warning: failed to install sqlc locally; sqlc commands will use Docker fallback\n'
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/pressly/goose/v3/cmd/goose@{{goose_version}}
 
@@ -203,6 +210,7 @@ check-tools:
     [ -x "{{yamlfmt}}" ] || missing+=("{{yamlfmt}}")
     [ -x "{{gofumpt}}" ] || missing+=("{{gofumpt}}")
     [ -x "{{goimports}}" ] || missing+=("{{goimports}}")
+    [ -x "{{actionlint}}" ] || missing+=("{{actionlint}}")
 
     if [ "${#missing[@]}" -ne 0 ]; then
         printf 'Missing required local tools:\n'
@@ -296,7 +304,11 @@ lint-go: check-tools
 lint-yaml: check-tools
 	{{yamlfmt}} -lint {{yaml_paths}}
 
-lint: lint-go lint-yaml
+lint-actions: check-tools
+    just check-action-pins
+    {{actionlint}}
+
+lint: lint-go lint-yaml lint-actions
 
 [script]
 check-security-tools:
@@ -324,6 +336,30 @@ security-secrets: check-security-tools
     "${args[@]}"
 
 security: security-vuln security-secrets
+
+[script]
+deploy-test:
+    image_ref="${IMAGE_REF:-}"
+    if [ -z "$image_ref" ]; then
+        printf 'IMAGE_REF is required\n'
+        exit 1
+    fi
+
+    printf 'Placeholder deploy for test environment\n'
+    printf 'IMAGE_REF=%s\n' "$image_ref"
+    # TODO: replace with real deploy command
+
+[script]
+deploy-prod:
+    image_ref="${IMAGE_REF:-}"
+    if [ -z "$image_ref" ]; then
+        printf 'IMAGE_REF is required\n'
+        exit 1
+    fi
+
+    printf 'Placeholder deploy for production environment\n'
+    printf 'IMAGE_REF=%s\n' "$image_ref"
+    # TODO: replace with real deploy command
 
 [script]
 test pattern="" *args:
@@ -378,5 +414,54 @@ vendor-check:
     fi
 
 tidy-check: vendor-check
+
+[script]
+_pin-actions-in root:
+    root="{{root}}"
+    mapfile -t files < <(find "$root/.github" -name '*.yml' -type f)
+    if [ "${#files[@]}" -eq 0 ]; then
+        exit 0
+    fi
+
+    while IFS= read -r line; do
+        # Skip comments and empty lines.
+        case "$line" in
+            '#'*|'') continue ;;
+        esac
+
+        action="${line%%=*}"
+        pin="${line#*=}"
+        sha="${pin%%#*}"
+        sha="${sha%"${sha##*[! ]}"}"
+        version="${pin#*#}"
+        version="${version#"${version%%[! ]*}"}"
+
+        # Replace uses: action(/optional-subpath)@anything with the pinned SHA.
+        for f in "${files[@]}"; do
+            sed -E "s|(uses: ${action}(/[^@]*)?)@[^[:space:]]+([ ]+#.*)?|\1@${sha} # ${version}|g" "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+        done
+    done < "$root/.github/action-versions.env"
+
+[script]
+pin-actions:
+    just --quiet _pin-actions-in .
+
+[script]
+check-action-pins:
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+    cp -R .github "$tmpdir/.github"
+    just --quiet _pin-actions-in "$tmpdir"
+
+    if ! diff_output="$(diff -qr .github "$tmpdir/.github" || true)"; then
+        :
+    fi
+
+    if [ -n "$diff_output" ]; then
+        printf 'Action pins are out of sync. Run: just pin-actions\n'
+        printf 'Differences:\n%s\n' "$diff_output"
+        exit 1
+    fi
 
 check: fmt-go-check lint test sqlc-check ogen-check vendor-check

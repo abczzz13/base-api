@@ -1,0 +1,155 @@
+name: Slack Notify
+description: Send an optional Slack notification when a webhook URL is configured.
+
+inputs:
+  webhook-url:
+    description: Slack incoming webhook URL.
+    required: false
+    default: ""
+  title:
+    description: Message title.
+    required: true
+  status:
+    description: Workflow status.
+    required: true
+  environment:
+    description: Deployment environment.
+    required: false
+    default: ""
+  image-ref:
+    description: Image reference.
+    required: false
+    default: ""
+  details:
+    description: Extra detail line.
+    required: false
+    default: ""
+
+outputs:
+  attempted:
+    description: Whether a webhook was configured.
+    value: ${{ steps.notify.outputs.attempted }}
+  delivered:
+    description: Whether the notification was delivered.
+    value: ${{ steps.notify.outputs.delivered }}
+
+runs:
+  using: composite
+  steps:
+    - name: Send Slack notification
+      id: notify
+      shell: bash
+      env:
+        INPUT_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        INPUT_TITLE: ${{ inputs.title }}
+        INPUT_STATUS: ${{ inputs.status }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_IMAGE_REF: ${{ inputs.image-ref }}
+        INPUT_DETAILS: ${{ inputs.details }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "$INPUT_WEBHOOK_URL" ]; then
+          printf 'attempted=false\n' >> "$GITHUB_OUTPUT"
+          printf 'delivered=false\n' >> "$GITHUB_OUTPUT"
+          printf 'Slack webhook not configured; skipping notification.\n'
+          exit 0
+        fi
+
+        case "$INPUT_STATUS" in
+          success) icon=':white_check_mark:' ;;
+          failure) icon=':x:' ;;
+          cancelled) icon=':warning:' ;;
+          skipped) icon=':fast_forward:' ;;
+          *) icon=':information_source:' ;;
+        esac
+
+        printf 'attempted=true\n' >> "$GITHUB_OUTPUT"
+
+        export SLACK_WEBHOOK_URL="$INPUT_WEBHOOK_URL"
+        export SLACK_ICON="$icon"
+        export SLACK_TITLE="$INPUT_TITLE"
+        export SLACK_STATUS="$INPUT_STATUS"
+        export SLACK_ENVIRONMENT="$INPUT_ENVIRONMENT"
+        export SLACK_IMAGE_REF="$INPUT_IMAGE_REF"
+        export SLACK_DETAILS="$INPUT_DETAILS"
+        export SLACK_RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        export SLACK_REF_NAME="$GITHUB_REF_NAME"
+        export SLACK_REPOSITORY="$GITHUB_REPOSITORY"
+        export SLACK_WORKFLOW="$GITHUB_WORKFLOW"
+
+        python3 <<'PY'
+        import json
+        import os
+        import urllib.error
+        import urllib.request
+
+        def field(title: str, value: str) -> dict:
+            return {"type": "mrkdwn", "text": f"*{title}:*\n{value or '-'}"}
+
+        payload = {
+            "text": f"{os.environ['SLACK_ICON']} {os.environ['SLACK_TITLE']} ({os.environ['SLACK_STATUS']})",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"{os.environ['SLACK_TITLE']}"},
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"{os.environ['SLACK_ICON']} *Status:* `{os.environ['SLACK_STATUS']}`\n"
+                            f"*Workflow:* `{os.environ['SLACK_WORKFLOW']}`\n"
+                            f"*Repository:* `{os.environ['SLACK_REPOSITORY']}`\n"
+                            f"*Ref:* `{os.environ['SLACK_REF_NAME']}`"
+                        ),
+                    },
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        field("Environment", os.environ.get("SLACK_ENVIRONMENT", "")),
+                        field("Image", os.environ.get("SLACK_IMAGE_REF", "")),
+                    ],
+                },
+            ],
+        }
+
+        details = os.environ.get("SLACK_DETAILS", "")
+        if details:
+            payload["blocks"].append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Details:*\n{details}"},
+                }
+            )
+
+        payload["blocks"].append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Open GitHub Run"},
+                        "url": os.environ["SLACK_RUN_URL"],
+                    }
+                ],
+            }
+        )
+
+        request = urllib.request.Request(
+            os.environ["SLACK_WEBHOOK_URL"],
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                pass
+        except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+            raise RuntimeError(f"Slack webhook failed: {exc}") from exc
+        PY
+
+        printf 'delivered=true\n' >> "$GITHUB_OUTPUT"
+        printf 'Slack notification delivered.\n'

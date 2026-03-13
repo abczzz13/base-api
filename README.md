@@ -22,7 +22,7 @@ The goal is to give new services a clean, idiomatic starting point with strong d
 - An opt-in outbound weather integration example built on `internal/outboundhttp`
 - Reproducible code generation checks for `ogen` and `sqlc`
 - Distroless container image and hardened compose setup
-- CI quality gates for formatting, linting, tests, vuln scanning, and secret scanning
+- Split GitHub Actions workflows for CI, security, image delivery, and manual deployment
 
 ## Architecture
 
@@ -90,6 +90,7 @@ just run
 ```bash
 just tools
 just fmt
+just lint-actions
 just test
 just check
 just security
@@ -97,6 +98,15 @@ just pre-pr
 just sqlc-generate
 just ogen-generate
 ```
+
+## Automation
+
+- `CI` runs `just check` plus container build validation on pull requests, `main`, and manual dispatches.
+- `Security` runs `just security`, dependency review, Trivy config scanning, uploads Trivy SARIF into GitHub code scanning, and runs CodeQL on pull requests, `main`, a weekly schedule, and manual dispatches.
+- `Publish` builds and scans per-platform image archives before publishing multi-arch `ghcr.io/abczzz13/base-api` images for `main`, `v*` tags, and manual feature-branch preview publishes, signs images with `cosign`, emits deploy metadata, and uploads image-scan SARIF into GitHub code scanning.
+- `Deploy` is a manual `workflow_dispatch` workflow that promotes a successful `Publish` run to `test` or `production` after cross-checking the publish metadata against immutable GitHub run data. Successful published runs from `main`, manual feature-branch previews, and `v*` tags may deploy to `test`; only successful tag-push runs built from `v*` tags may deploy to `production`.
+- Placeholder deploy commands live in `justfile` as `just deploy-test` and `just deploy-prod`, so replacing the placeholder behavior later does not require reshaping the workflows.
+- Optional Slack notifications are sent for deploy jobs when the `SLACK_WEBHOOK_URL` GitHub secret is configured; when it is absent, the notification steps skip cleanly.
 
 ## Rename This Template
 

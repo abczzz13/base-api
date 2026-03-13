@@ -1,0 +1,9 @@
+name: base-api-codeql
+
+paths-ignore:
+  - vendor
+  - internal/dbsqlc
+  - internal/publicoas
+  - internal/infraoas
+  - .bin
+  - build

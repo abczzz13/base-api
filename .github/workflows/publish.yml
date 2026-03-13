@@ -1,0 +1,383 @@
+name: Publish
+run-name: Publish / ${{ github.event_name }} / ${{ github.ref_name }}
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  image-metadata:
+    name: Publish / Derive Image Metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      artifact_name: ${{ steps.vars.outputs.artifact_name }}
+      build_time: ${{ steps.vars.outputs.build_time }}
+      git_branch: ${{ steps.vars.outputs.git_branch }}
+      git_tag: ${{ steps.vars.outputs.git_tag }}
+      image_name: ${{ steps.vars.outputs.image_name }}
+      primary_image: ${{ steps.vars.outputs.primary_image }}
+      source_ref: ${{ steps.vars.outputs.source_ref }}
+      source_ref_name: ${{ steps.vars.outputs.source_ref_name }}
+      source_repository: ${{ steps.vars.outputs.source_repository }}
+      source_sha: ${{ steps.vars.outputs.source_sha }}
+      source_type: ${{ steps.vars.outputs.source_type }}
+      tags: ${{ steps.vars.outputs.tags }}
+      version_value: ${{ steps.vars.outputs.version_value }}
+    steps:
+      - name: Prepare / Derive image metadata
+        id: vars
+        run: |
+          set -euo pipefail
+
+          image_name='ghcr.io/abczzz13/base-api'
+          sha_short="${GITHUB_SHA::12}"
+          ref_name="${GITHUB_REF_NAME}"
+          ref_slug="$(printf '%s' "$ref_name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')"
+          build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          source_repository="$GITHUB_REPOSITORY"
+          source_ref="$GITHUB_REF"
+          source_ref_name="$GITHUB_REF_NAME"
+          source_sha="$GITHUB_SHA"
+          source_type=branch
+          tags=()
+          git_branch=unknown
+          git_tag=unknown
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            source_type=tag
+            git_tag="$ref_name"
+            version_value="$ref_name"
+            artifact_name="publish-tag-${ref_slug}-${sha_short}"
+            tags=("${image_name}:${ref_name}" "${image_name}:sha-${sha_short}")
+
+            if [[ "$ref_name" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              major="${BASH_REMATCH[1]}"
+              minor="${BASH_REMATCH[2]}"
+              tags+=("${image_name}:v${major}.${minor}" "${image_name}:v${major}" "${image_name}:latest")
+            fi
+          elif [ "$ref_name" = 'main' ]; then
+            git_branch="$ref_name"
+            version_value="edge-${sha_short}"
+            artifact_name="publish-main-${sha_short}"
+            tags=("${image_name}:edge" "${image_name}:sha-${sha_short}")
+          else
+            git_branch="$ref_name"
+            version_value="preview-${ref_slug}-${sha_short}"
+            artifact_name="publish-preview-${ref_slug}-${sha_short}"
+            tags=("${image_name}:preview-${ref_slug}-${sha_short}" "${image_name}:sha-${sha_short}")
+          fi
+
+          primary_image="${tags[0]}"
+
+          {
+            printf 'artifact_name=%s\n' "$artifact_name"
+            printf 'build_time=%s\n' "$build_time"
+            printf 'git_branch=%s\n' "$git_branch"
+            printf 'git_tag=%s\n' "$git_tag"
+            printf 'image_name=%s\n' "$image_name"
+            printf 'primary_image=%s\n' "$primary_image"
+            printf 'source_ref=%s\n' "$source_ref"
+            printf 'source_ref_name=%s\n' "$source_ref_name"
+            printf 'source_repository=%s\n' "$source_repository"
+            printf 'source_sha=%s\n' "$source_sha"
+            printf 'source_type=%s\n' "$source_type"
+            printf 'version_value=%s\n' "$version_value"
+            printf 'tags<<EOF\n'
+            printf '%s\n' "${tags[@]}"
+            printf 'EOF\n'
+          } >> "$GITHUB_OUTPUT"
+
+  image-scan:
+    name: Publish / Build And Scan (${{ matrix.platform_slug }})
+    needs: image-metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform_slug: linux-amd64
+          - platform: linux/arm64
+            platform_slug: linux-arm64
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Prepare / Create artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Prepare / Setup QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Prepare / Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build / Export scan image archive
+        id: build_scan_image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runner
+          platforms: ${{ matrix.platform }}
+          outputs: type=docker,dest=artifacts/${{ matrix.platform_slug }}.tar
+          build-args: |
+            VERSION=${{ needs.image-metadata.outputs.version_value }}
+            GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ needs.image-metadata.outputs.git_branch }}
+            GIT_TAG=${{ needs.image-metadata.outputs.git_tag }}
+            GIT_TREE_STATE=clean
+            BUILD_TIME=${{ needs.image-metadata.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify / Generate Trivy SARIF
+        id: image_scan_sarif
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          scan-type: image
+          input: artifacts/${{ matrix.platform_slug }}.tar
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: artifacts/trivy-${{ matrix.platform_slug }}.sarif
+          exit-code: "0"
+
+      - name: Report / Upload Trivy SARIF
+        if: always() && hashFiles(format('artifacts/trivy-{0}.sarif', matrix.platform_slug)) != ''
+        uses: github/codeql-action/upload-sarif@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        with:
+          sarif_file: artifacts/trivy-${{ matrix.platform_slug }}.sarif
+          category: trivy-image-${{ matrix.platform_slug }}
+
+      - name: Verify / Gate on Trivy findings
+        id: image_scan_gate
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          scan-type: image
+          input: artifacts/${{ matrix.platform_slug }}.tar
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          output: artifacts/trivy-${{ matrix.platform_slug }}.txt
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Report / Job summary
+        if: always()
+        run: |
+          {
+            echo "## Publish / Build And Scan (${{ matrix.platform_slug }})"
+            echo
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Archive build | ${{ steps.build_scan_image.outcome }} |"
+            echo "| SARIF export | ${{ steps.image_scan_sarif.outcome }} |"
+            echo "| Severity gate | ${{ steps.image_scan_gate.outcome }} |"
+            echo "| Platform | \`${{ matrix.platform }}\` |"
+            echo "| Artifacts | \`publish-image-scan-${{ matrix.platform_slug }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report / Upload scan output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: publish-image-scan-${{ matrix.platform_slug }}
+          path: artifacts/
+          retention-days: 14
+
+  build-image:
+    name: Publish / Build And Package Image
+    needs: [image-metadata, image-scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    outputs:
+      artifact-name: ${{ needs.image-metadata.outputs.artifact_name }}
+      image-ref: ${{ steps.record.outputs.image_ref }}
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Prepare / Create artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Prepare / Setup QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Prepare / Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Prepare / Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build / Build image
+        id: build_image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runner
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          tags: ${{ needs.image-metadata.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.image-metadata.outputs.version_value }}
+            GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ needs.image-metadata.outputs.git_branch }}
+            GIT_TAG=${{ needs.image-metadata.outputs.git_tag }}
+            GIT_TREE_STATE=clean
+            BUILD_TIME=${{ needs.image-metadata.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build / Record build metadata
+        id: record
+        run: |
+          set -euo pipefail
+
+          image_ref='${{ needs.image-metadata.outputs.image_name }}@${{ steps.build_image.outputs.digest }}'
+
+          {
+            printf 'primary_image=%s\n' '${{ needs.image-metadata.outputs.primary_image }}'
+            printf 'digest=%s\n' '${{ steps.build_image.outputs.digest }}'
+            printf 'image_ref=%s\n' "$image_ref"
+          } > artifacts/image.txt
+
+          printf 'image_ref=%s\n' "$image_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Build / Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          push-to-registry: true
+          subject-name: ${{ needs.image-metadata.outputs.image_name }}
+          subject-digest: ${{ steps.build_image.outputs.digest }}
+
+      - name: Build / Generate SBOM
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          scan-type: image
+          image-ref: ${{ steps.record.outputs.image_ref }}
+          format: spdx-json
+          scanners: vuln
+          output: artifacts/sbom.spdx.json
+          exit-code: "0"
+
+      - name: Build / Install cosign
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        with:
+          cosign-release: v3.0.5
+
+      - name: Build / Sign image
+        env:
+          IMAGE_REF: ${{ steps.record.outputs.image_ref }}
+        run: cosign sign --yes "$IMAGE_REF"
+
+      - name: Build / Record deploy metadata
+        env:
+          META_REPOSITORY: ${{ github.repository }}
+          META_WORKFLOW: ${{ github.workflow }}
+          META_RUN_ID: ${{ github.run_id }}
+          META_RUN_ATTEMPT: ${{ github.run_attempt }}
+          META_EVENT_NAME: ${{ github.event_name }}
+          META_SOURCE_REPOSITORY: ${{ needs.image-metadata.outputs.source_repository }}
+          META_SOURCE_TYPE: ${{ needs.image-metadata.outputs.source_type }}
+          META_SOURCE_REF: ${{ needs.image-metadata.outputs.source_ref }}
+          META_SOURCE_REF_NAME: ${{ needs.image-metadata.outputs.source_ref_name }}
+          META_SOURCE_SHA: ${{ needs.image-metadata.outputs.source_sha }}
+          META_IMAGE_NAME: ${{ needs.image-metadata.outputs.image_name }}
+          META_IMAGE_TAG: ${{ needs.image-metadata.outputs.primary_image }}
+          META_IMAGE_DIGEST: ${{ steps.build_image.outputs.digest }}
+          META_IMAGE_REF: ${{ steps.record.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = {
+              "repository": os.environ["META_REPOSITORY"],
+              "workflow": os.environ["META_WORKFLOW"],
+              "run_id": int(os.environ["META_RUN_ID"]),
+              "run_attempt": int(os.environ["META_RUN_ATTEMPT"]),
+              "event_name": os.environ["META_EVENT_NAME"],
+              "source_repository": os.environ["META_SOURCE_REPOSITORY"],
+              "source_type": os.environ["META_SOURCE_TYPE"],
+              "source_ref": os.environ["META_SOURCE_REF"],
+              "source_ref_name": os.environ["META_SOURCE_REF_NAME"],
+              "source_sha": os.environ["META_SOURCE_SHA"],
+              "image_name": os.environ["META_IMAGE_NAME"],
+              "image_tag": os.environ["META_IMAGE_TAG"],
+              "image_digest": os.environ["META_IMAGE_DIGEST"],
+              "image_ref": os.environ["META_IMAGE_REF"],
+              "push_image": True,
+          }
+
+          Path("artifacts/publish-metadata.json").write_text(
+              json.dumps(metadata, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Report / Job summary
+        if: always()
+        run: |
+          {
+            echo "## Publish / Build And Package Image"
+            echo
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Build result | ${{ steps.build_image.outcome }} |"
+            echo "| Image gate | passed after per-platform Trivy scans |"
+            echo "| Primary image | \`${{ needs.image-metadata.outputs.primary_image }}\` |"
+            echo "| Image ref | \`${{ steps.record.outputs.image_ref }}\` |"
+            echo "| Source | \`${{ needs.image-metadata.outputs.source_type }}:${{ needs.image-metadata.outputs.source_ref_name }}\` |"
+            echo "| Artifact bundle | \`${{ needs.image-metadata.outputs.artifact_name }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report / Upload publish artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ needs.image-metadata.outputs.artifact_name }}
+          path: artifacts/
+          retention-days: 14
+
+      - name: Report / Upload publish metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: publish-metadata
+          path: artifacts/publish-metadata.json
+          retention-days: 14

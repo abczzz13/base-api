@@ -1,0 +1,231 @@
+name: Security
+run-name: Security / ${{ github.event_name }} / ${{ github.ref_name }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  repo-security:
+    name: Security / Repo Scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare / Setup toolchain
+        uses: ./.github/actions/setup-go-just
+        with:
+          cache-tools: "true"
+
+      - name: Prepare / Scope gitleaks scan
+        id: gitleaks_scope
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            pr_base_sha="$(jq -r '.pull_request.base.sha // empty' "$GITHUB_EVENT_PATH")"
+            pr_head_sha="$(jq -r '.pull_request.head.sha // empty' "$GITHUB_EVENT_PATH")"
+            scope="${pr_base_sha}..${pr_head_sha}"
+          else
+            before_sha="$(jq -r '.before // empty' "$GITHUB_EVENT_PATH")"
+            if [[ -n "$before_sha" && "$before_sha" != "0000000000000000000000000000000000000000" ]]; then
+              scope="${before_sha}..${GITHUB_SHA}"
+            else
+              scope="--all"
+            fi
+          fi
+
+          printf 'GITLEAKS_LOG_OPTS=%s\n' "$scope" >> "$GITHUB_ENV"
+          printf 'scope=%s\n' "$scope" >> "$GITHUB_OUTPUT"
+
+      - name: Verify / Run repo security checks
+        id: repo_scans
+        run: |
+          set -euo pipefail
+          just tools 2>&1 | tee artifacts/security-tools.log
+          just security 2>&1 | tee artifacts/repo-security.log
+
+      - name: Report / Job summary
+        if: always()
+        run: |
+          {
+            echo "## Security / Repo Scans"
+            echo
+            echo "| Item | Result |"
+            echo "| --- | --- |"
+            echo "| Repo security checks | ${{ steps.repo_scans.outcome }} |"
+            echo "| Gitleaks scope | \`${{ steps.gitleaks_scope.outputs.scope }}\` |"
+            echo "| Commands | \`just tools\`, \`just security\` |"
+            echo "| Artifacts | \`security-repo-scans\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report / Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-repo-scans
+          path: artifacts/
+          retention-days: 14
+
+  dependency-review:
+    name: Security / Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Verify / Review dependency changes
+        uses: actions/dependency-review-action@4901385134134e04cec5fbe5ddfe3b2c5bd5d976 # v4
+
+      - name: Report / Job summary
+        if: always()
+        run: |
+          {
+            echo "## Security / Dependency Review"
+            echo
+            echo "Native GitHub dependency review completed for this pull request."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  trivy-config:
+    name: Security / Trivy Config Scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Prepare / Create artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Verify / Generate Trivy SARIF
+        id: trivy_config_sarif
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          scan-type: config
+          scan-ref: .
+          skip-dirs: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,.bin,build
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: artifacts/trivy-config.sarif
+          exit-code: "0"
+
+      - name: Report / Upload Trivy SARIF
+        if: always() && hashFiles('artifacts/trivy-config.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        with:
+          sarif_file: artifacts/trivy-config.sarif
+          category: trivy-config
+
+      - name: Verify / Gate on Trivy findings
+        id: trivy_config_gate
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        with:
+          scan-type: config
+          scan-ref: .
+          skip-dirs: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,.bin,build
+          severity: HIGH,CRITICAL
+          format: table
+          output: artifacts/trivy-config.txt
+          exit-code: "1"
+
+      - name: Report / Job summary
+        if: always()
+        run: |
+          {
+            echo "## Security / Trivy Config Scan"
+            echo
+            echo "| Item | Result |"
+            echo "| --- | --- |"
+            echo "| SARIF export | ${{ steps.trivy_config_sarif.outcome }} |"
+            echo "| Severity gate | ${{ steps.trivy_config_gate.outcome }} |"
+            echo "| Severity threshold | \`HIGH,CRITICAL\` |"
+            echo "| Artifacts | \`security-trivy-config\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report / Upload scan output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-trivy-config
+          path: artifacts/
+          retention-days: 14
+
+  codeql:
+    name: Security / CodeQL
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Prepare / Setup toolchain
+        uses: ./.github/actions/setup-go-just
+
+      - name: Prepare / Initialize CodeQL
+        uses: github/codeql-action/init@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+        with:
+          languages: go
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Verify / Build for CodeQL
+        id: codeql_build
+        run: |
+          set -euo pipefail
+          just build-go 2>&1 | tee artifacts/codeql-build.log
+
+      - name: Verify / Analyze with CodeQL
+        id: codeql_analyze
+        uses: github/codeql-action/analyze@820e3160e279568db735cee8ed8f8e77a6da7818 # v3
+
+      - name: Report / Job summary
+        if: always()
+        run: |
+          {
+            echo "## Security / CodeQL"
+            echo
+            echo "| Item | Result |"
+            echo "| --- | --- |"
+            echo "| Build | ${{ steps.codeql_build.outcome }} |"
+            echo "| Analyze | ${{ steps.codeql_analyze.outcome }} |"
+            echo "| Artifacts | \`security-codeql-build\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report / Upload build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-codeql-build
+          path: artifacts/
+          retention-days: 14

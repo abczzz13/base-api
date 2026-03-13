@@ -1,0 +1,45 @@
+name: Setup Go And Just
+description: Setup Go, just, optional tool caching, and an artifacts directory.
+
+inputs:
+  setup-go:
+    description: Install Go from go-version-file.
+    default: "true"
+  go-version-file:
+    description: Path to the Go version file.
+    default: go.mod
+  setup-just:
+    description: Install just.
+    default: "true"
+  cache-tools:
+    description: Restore and save the local .bin cache.
+    default: "false"
+  create-artifacts-dir:
+    description: Create the artifacts directory.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      if: inputs.setup-go == 'true'
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache: true
+
+    - name: Setup just
+      if: inputs.setup-just == 'true'
+      uses: taiki-e/install-action@d8d7bd3d6a8d4366c7cb83df6330ff0d6cd77c2e # just
+
+    - name: Cache local tool binaries
+      if: inputs.cache-tools == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: .bin
+        key: ${{ runner.os }}-bin-${{ hashFiles('justfile') }}
+
+    - name: Create artifacts directory
+      if: inputs.create-artifacts-dir == 'true'
+      shell: bash
+      run: mkdir -p artifacts

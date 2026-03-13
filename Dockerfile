@@ -2,7 +2,7 @@
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG GO_IMAGE=golang:1.26.0-alpine
+ARG GO_IMAGE=golang:1.26.1-alpine
 ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot
 
 FROM ${GO_IMAGE} AS builder

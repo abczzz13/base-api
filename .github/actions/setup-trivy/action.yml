@@ -4,7 +4,7 @@ description: Install and cache a pinned Trivy binary from GitHub releases.
 inputs:
   version:
     description: Trivy version to install.
-    default: v0.69.1
+    default: v0.69.3
 
 runs:
   using: composite

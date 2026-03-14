@@ -1,0 +1,43 @@
+name: Run Image Validation
+description: Build the runtime image, then publish logs and summary.
+
+inputs:
+  artifact-name:
+    description: Uploaded artifact bundle name.
+    required: false
+    default: image-validation-logs
+  retention-days:
+    description: Artifact retention period in days.
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare / Workspace
+      uses: ./.github/actions/prepare-workspace
+      with:
+        setup-go: "false"
+        setup-just: "true"
+        cache-tools: "false"
+
+    - name: Verify / Build runtime image
+      id: image_validation
+      shell: bash
+      run: |
+        set -euo pipefail
+        just ci-image-validate 2>&1 | tee artifacts/image-validation.log
+
+    - name: Report / Publish results
+      if: always()
+      uses: ./.github/actions/report-job
+      with:
+        title: Image Validation
+        summary: |
+          | Item | Result |
+          | --- | --- |
+          | Runtime image build | ${{ steps.image_validation.outcome }} |
+          | Artifacts | `${{ inputs.artifact-name }}` |
+        artifact-name: ${{ inputs.artifact-name }}
+        artifact-path: artifacts/
+        retention-days: ${{ inputs.retention-days }}

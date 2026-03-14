@@ -1,0 +1,25 @@
+name: Lint
+run-name: "Lint / ${{ github.event_name }} / ${{ github.event_name == 'pull_request' && format('PR #{0} ({1})', github.event.pull_request.number, github.head_ref) || github.ref_name }}"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    uses: ./.github/workflows/reusable-go-lint.yml
+    with:
+      artifact_name: lint-logs
+      retention_days: 14

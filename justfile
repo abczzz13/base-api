@@ -465,3 +465,13 @@ check-action-pins:
     fi
 
 check: fmt-go-check lint test sqlc-check ogen-check vendor-check
+
+# CI-specific recipes — these are the contract between reusable GitHub Actions
+# and the repository. Every repo that uses the shared actions must provide these.
+ci-lint: tools fmt-go-check lint sqlc-check ogen-check vendor-check
+
+ci-test: test
+
+ci-image-validate: build-image-ci
+
+ci-security: tools security

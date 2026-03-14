@@ -1,0 +1,41 @@
+name: Run Lint
+description: Run lint and drift checks, then publish logs and summary.
+
+inputs:
+  artifact-name:
+    description: Uploaded artifact bundle name.
+    required: false
+    default: lint-logs
+  retention-days:
+    description: Artifact retention period in days.
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare / Workspace
+      uses: ./.github/actions/prepare-workspace
+      with:
+        cache-tools: "true"
+
+    - name: Verify / Run lint checks
+      id: lint_checks
+      shell: bash
+      run: |
+        set -euo pipefail
+        just ci-lint 2>&1 | tee artifacts/lint.log
+
+    - name: Report / Publish results
+      if: always()
+      uses: ./.github/actions/report-job
+      with:
+        title: Lint
+        summary: |
+          | Item | Result |
+          | --- | --- |
+          | Lint checks | ${{ steps.lint_checks.outcome }} |
+          | Artifacts | `${{ inputs.artifact-name }}` |
+        artifact-name: ${{ inputs.artifact-name }}
+        artifact-path: artifacts/
+        retention-days: ${{ inputs.retention-days }}

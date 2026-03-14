@@ -1,0 +1,25 @@
+name: Test
+run-name: "Test / ${{ github.event_name }} / ${{ github.event_name == 'pull_request' && format('PR #{0} ({1})', github.event.pull_request.number, github.head_ref) || github.ref_name }}"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/reusable-go-test.yml
+    with:
+      artifact_name: test-logs
+      retention_days: 14

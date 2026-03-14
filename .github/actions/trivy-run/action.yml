@@ -1,0 +1,133 @@
+name: Trivy Run
+description: Run a Trivy config or image scan with a consistent flag interface.
+
+inputs:
+  scan-type:
+    description: Trivy scan type, either config or image.
+    required: true
+  scan-ref:
+    description: Config scan target path.
+    required: false
+    default: .
+  input:
+    description: Image archive path for image scans.
+    required: false
+    default: ""
+  image-ref:
+    description: Image reference for image scans.
+    required: false
+    default: ""
+  severity:
+    description: Severity threshold list.
+    required: false
+    default: ""
+  ignore-unfixed:
+    description: Ignore unfixed findings.
+    required: false
+    default: "false"
+  vuln-type:
+    description: Vulnerability type filter.
+    required: false
+    default: ""
+  scanners:
+    description: Scanner set.
+    required: false
+    default: ""
+  format:
+    description: Output format.
+    required: false
+    default: table
+  output:
+    description: Output file path.
+    required: false
+    default: ""
+  exit-code:
+    description: Exit code when findings are present.
+    required: false
+    default: "0"
+  skip-dirs:
+    description: Comma-separated directories to skip.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run Trivy
+      shell: bash
+      env:
+        INPUT_EXIT_CODE: ${{ inputs.exit-code }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+        INPUT_IMAGE_REF: ${{ inputs.image-ref }}
+        INPUT_INPUT: ${{ inputs.input }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_SCAN_REF: ${{ inputs.scan-ref }}
+        INPUT_SCAN_TYPE: ${{ inputs.scan-type }}
+        INPUT_SCANNERS: ${{ inputs.scanners }}
+        INPUT_SEVERITY: ${{ inputs.severity }}
+        INPUT_SKIP_DIRS: ${{ inputs.skip-dirs }}
+        INPUT_VULN_TYPE: ${{ inputs.vuln-type }}
+      run: |
+        set -euo pipefail
+
+        args=()
+
+        if [ -n "$INPUT_SEVERITY" ]; then
+          args+=(--severity "$INPUT_SEVERITY")
+        fi
+
+        if [ "$INPUT_IGNORE_UNFIXED" = 'true' ]; then
+          args+=(--ignore-unfixed)
+        fi
+
+        if [ -n "$INPUT_VULN_TYPE" ]; then
+          args+=(--vuln-type "$INPUT_VULN_TYPE")
+        fi
+
+        if [ -n "$INPUT_SCANNERS" ]; then
+          args+=(--scanners "$INPUT_SCANNERS")
+        fi
+
+        if [ -n "$INPUT_FORMAT" ]; then
+          args+=(--format "$INPUT_FORMAT")
+        fi
+
+        if [ -n "$INPUT_OUTPUT" ]; then
+          args+=(--output "$INPUT_OUTPUT")
+        fi
+
+        if [ -n "$INPUT_EXIT_CODE" ]; then
+          args+=(--exit-code "$INPUT_EXIT_CODE")
+        fi
+
+        if [ -n "$INPUT_SKIP_DIRS" ]; then
+          IFS=',' read -r -a skip_dirs <<<"$INPUT_SKIP_DIRS"
+          for skip_dir in "${skip_dirs[@]}"; do
+            skip_dir="${skip_dir#"${skip_dir%%[![:space:]]*}"}"
+            skip_dir="${skip_dir%"${skip_dir##*[![:space:]]}"}"
+            if [ -n "$skip_dir" ]; then
+              args+=(--skip-dirs "$skip_dir")
+            fi
+          done
+        fi
+
+        case "$INPUT_SCAN_TYPE" in
+          config)
+            trivy config "${args[@]}" "$INPUT_SCAN_REF"
+            ;;
+          image)
+            if [ -n "$INPUT_INPUT" ]; then
+              trivy image "${args[@]}" --input "$INPUT_INPUT"
+            elif [ -n "$INPUT_IMAGE_REF" ]; then
+              trivy image "${args[@]}" "$INPUT_IMAGE_REF"
+            else
+              printf '::error::Trivy image scans require either input or image-ref.\n'
+              exit 1
+            fi
+            ;;
+          *)
+            printf '::error::Unsupported Trivy scan type: %s\n' "$INPUT_SCAN_TYPE"
+            exit 1
+            ;;
+        esac

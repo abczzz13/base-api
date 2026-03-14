@@ -1,0 +1,47 @@
+name: Run Go Test
+description: Run the Go test suite, then publish logs and summary.
+
+inputs:
+  command:
+    description: Command to execute for tests.
+    required: false
+    default: just test
+  artifact-name:
+    description: Uploaded artifact bundle name.
+    required: false
+    default: test-logs
+  retention-days:
+    description: Artifact retention period in days.
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare / Workspace
+      uses: ./.github/actions/prepare-workspace
+      with:
+        cache-tools: "false"
+
+    - name: Verify / Run test suite
+      id: test_suite
+      shell: bash
+      run: |
+        set -euo pipefail
+        ${{ inputs.command }} 2>&1 | tee artifacts/test.log
+
+    - name: Report / Publish results
+      if: always()
+      uses: ./.github/actions/report-job
+      with:
+        title: Test
+        summary: |
+          | Item | Result |
+          | --- | --- |
+          | Test suite | ${{ steps.test_suite.outcome }} |
+          | PostgreSQL service | enabled |
+          | Command | `${{ inputs.command }}` |
+          | Artifacts | `${{ inputs.artifact-name }}` |
+        artifact-name: ${{ inputs.artifact-name }}
+        artifact-path: artifacts/
+        retention-days: ${{ inputs.retention-days }}

@@ -1,0 +1,81 @@
+name: Reusable Trivy Config Scan
+
+on:
+  workflow_call:
+    inputs:
+      title:
+        description: Summary title.
+        required: false
+        type: string
+        default: Security / Trivy Config Scan
+      scan_ref:
+        description: Config scan target path.
+        required: false
+        type: string
+        default: .
+      skip_dirs:
+        description: Comma-separated directories to skip.
+        required: false
+        type: string
+        default: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,.bin,build
+      severity:
+        description: Severity threshold list.
+        required: false
+        type: string
+        default: HIGH,CRITICAL
+      sarif_file:
+        description: SARIF output path.
+        required: false
+        type: string
+        default: artifacts/trivy-config.sarif
+      gate_file:
+        description: Text output path for the severity gate.
+        required: false
+        type: string
+        default: artifacts/trivy-config.txt
+      artifact_name:
+        description: Uploaded artifact bundle name.
+        required: false
+        type: string
+        default: security-trivy-config
+      sarif_category:
+        description: SARIF upload category.
+        required: false
+        type: string
+        default: trivy-config
+      upload_sarif:
+        description: Upload SARIF results.
+        required: false
+        type: boolean
+        default: true
+      retention_days:
+        description: Artifact retention period in days.
+        required: false
+        type: number
+        default: 14
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify / Trivy config scan
+        uses: ./.github/actions/run-trivy-config-scan
+        with:
+          title: ${{ inputs.title }}
+          scan-ref: ${{ inputs.scan_ref }}
+          skip-dirs: ${{ inputs.skip_dirs }}
+          severity: ${{ inputs.severity }}
+          sarif-file: ${{ inputs.sarif_file }}
+          gate-file: ${{ inputs.gate_file }}
+          artifact-name: ${{ inputs.artifact_name }}
+          sarif-category: ${{ inputs.sarif_category }}
+          upload-sarif: ${{ inputs.upload_sarif }}
+          retention-days: ${{ inputs.retention_days }}

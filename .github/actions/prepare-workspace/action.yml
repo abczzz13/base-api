@@ -1,0 +1,31 @@
+name: Prepare Workspace
+description: Setup tooling and optionally create the artifacts directory.
+
+inputs:
+  setup-go:
+    description: Install Go from the configured go-version file.
+    default: "true"
+  go-version-file:
+    description: Path to the Go version file.
+    default: go.mod
+  setup-just:
+    description: Install just.
+    default: "true"
+  cache-tools:
+    description: Restore and save the local .bin cache.
+    default: "false"
+  create-artifacts-dir:
+    description: Create the artifacts directory.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup toolchain
+      uses: ./.github/actions/setup-go-just
+      with:
+        setup-go: ${{ inputs.setup-go }}
+        go-version-file: ${{ inputs.go-version-file }}
+        setup-just: ${{ inputs.setup-just }}
+        cache-tools: ${{ inputs.cache-tools }}
+        create-artifacts-dir: ${{ inputs.create-artifacts-dir }}

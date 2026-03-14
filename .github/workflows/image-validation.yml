@@ -1,0 +1,26 @@
+name: Image Validation
+run-name: "Image Validation / ${{ github.event_name }} / ${{ github.event_name == 'pull_request' && format('PR #{0} ({1})', github.event.pull_request.number, github.head_ref) || github.ref_name }}"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: image-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image_validation:
+    name: Image Validation
+    uses: ./.github/workflows/reusable-image-validation.yml
+    with:
+      command: just build-image-ci
+      artifact_name: image-validation-logs
+      retention_days: 14

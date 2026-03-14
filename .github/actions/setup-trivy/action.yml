@@ -19,6 +19,8 @@ runs:
 
         version="${INPUT_VERSION#v}"
         install_dir="$HOME/.local/bin/trivy-bin"
+        cache_dir="$GITHUB_WORKSPACE/.cache/trivy"
+        cache_key_date="$(date -u '+%Y-%m-%d')"
 
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
           Linux-X64)
@@ -43,6 +45,8 @@ runs:
 
         {
           printf 'asset_name=%s\n' "$asset_name"
+          printf 'cache_dir=%s\n' "$cache_dir"
+          printf 'cache_key_date=%s\n' "$cache_key_date"
           printf 'checksum_url=%s\n' "https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_checksums.txt"
           printf 'download_url=%s\n' "https://github.com/aquasecurity/trivy/releases/download/v${version}/${asset_name}"
           printf 'install_dir=%s\n' "$install_dir"
@@ -55,6 +59,14 @@ runs:
       with:
         path: ${{ steps.vars.outputs.install_dir }}
         key: trivy-binary-v${{ steps.vars.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Restore Trivy database cache
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ${{ steps.vars.outputs.cache_dir }}
+        key: trivy-db-${{ runner.os }}-${{ steps.vars.outputs.cache_key_date }}
+        restore-keys: |
+          trivy-db-${{ runner.os }}-
 
     - name: Install Trivy
       if: steps.cache.outputs.cache-hit != 'true'
@@ -107,4 +119,8 @@ runs:
 
     - name: Add Trivy to PATH
       shell: bash
-      run: printf '%s\n' '${{ steps.vars.outputs.install_dir }}' >> "$GITHUB_PATH"
+      run: printf '%s\n' "${{ steps.vars.outputs.install_dir }}" >> "$GITHUB_PATH"
+
+    - name: Set Trivy cache directory
+      shell: bash
+      run: printf 'TRIVY_CACHE_DIR=%s\n' "${{ steps.vars.outputs.cache_dir }}" >> "$GITHUB_ENV"

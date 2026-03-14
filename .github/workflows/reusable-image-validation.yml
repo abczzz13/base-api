@@ -1,0 +1,39 @@
+name: Reusable Image Validation
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: Command to execute for image validation.
+        required: false
+        type: string
+        default: just build-image-ci
+      artifact_name:
+        description: Uploaded artifact bundle name.
+        required: false
+        type: string
+        default: image-validation-logs
+      retention_days:
+        description: Artifact retention period in days.
+        required: false
+        type: number
+        default: 14
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify / Image validation
+        uses: ./.github/actions/run-image-validation
+        with:
+          command: ${{ inputs.command }}
+          artifact-name: ${{ inputs.artifact_name }}
+          retention-days: ${{ inputs.retention_days }}

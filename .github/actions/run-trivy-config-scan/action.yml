@@ -1,0 +1,103 @@
+name: Run Trivy Config Scan
+description: Run Trivy config scanning, upload SARIF if enabled, then publish logs and summary.
+
+inputs:
+  title:
+    description: Summary title.
+    required: false
+    default: Security / Trivy Config Scan
+  scan-ref:
+    description: Config scan target path.
+    required: false
+    default: .
+  skip-dirs:
+    description: Comma-separated directories to skip.
+    required: false
+    default: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,.bin,build
+  severity:
+    description: Severity threshold list.
+    required: false
+    default: HIGH,CRITICAL
+  sarif-file:
+    description: SARIF output path.
+    required: false
+    default: artifacts/trivy-config.sarif
+  gate-file:
+    description: Text output path for the severity gate.
+    required: false
+    default: artifacts/trivy-config.txt
+  artifact-name:
+    description: Uploaded artifact bundle name.
+    required: false
+    default: security-trivy-config
+  sarif-category:
+    description: SARIF upload category.
+    required: false
+    default: trivy-config
+  upload-sarif:
+    description: Upload SARIF results.
+    required: false
+    default: "true"
+  retention-days:
+    description: Artifact retention period in days.
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare / Workspace
+      uses: ./.github/actions/prepare-workspace
+      with:
+        setup-go: "false"
+        setup-just: "false"
+
+    - name: Prepare / Setup Trivy
+      uses: ./.github/actions/setup-trivy
+
+    - name: Verify / Generate Trivy SARIF
+      id: trivy_config_sarif
+      uses: ./.github/actions/trivy-run
+      with:
+        scan-type: config
+        scan-ref: ${{ inputs.scan-ref }}
+        skip-dirs: ${{ inputs.skip-dirs }}
+        severity: ${{ inputs.severity }}
+        format: sarif
+        output: ${{ inputs.sarif-file }}
+        exit-code: "0"
+
+    - name: Report / Upload Trivy SARIF
+      if: always() && inputs.upload-sarif == 'true' && hashFiles(inputs.sarif-file) != ''
+      uses: github/codeql-action/upload-sarif@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+      with:
+        sarif_file: ${{ inputs.sarif-file }}
+        category: ${{ inputs.sarif-category }}
+
+    - name: Verify / Gate on Trivy findings
+      id: trivy_config_gate
+      uses: ./.github/actions/trivy-run
+      with:
+        scan-type: config
+        scan-ref: ${{ inputs.scan-ref }}
+        skip-dirs: ${{ inputs.skip-dirs }}
+        severity: ${{ inputs.severity }}
+        format: table
+        output: ${{ inputs.gate-file }}
+        exit-code: "1"
+
+    - name: Report / Publish results
+      if: always()
+      uses: ./.github/actions/report-job
+      with:
+        title: ${{ inputs.title }}
+        summary: |
+          | Item | Result |
+          | --- | --- |
+          | SARIF export | ${{ steps.trivy_config_sarif.outcome }} |
+          | Severity gate | ${{ steps.trivy_config_gate.outcome }} |
+          | Severity threshold | `${{ inputs.severity }}` |
+          | Artifacts | `${{ inputs.artifact-name }}` |
+        artifact-name: ${{ inputs.artifact-name }}
+        artifact-path: artifacts/
+        retention-days: ${{ inputs.retention-days }}

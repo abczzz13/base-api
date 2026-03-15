@@ -1,0 +1,47 @@
+name: Run Repo Security
+description: Run repository security checks, then publish logs and summary.
+
+inputs:
+  artifact-name:
+    description: Uploaded artifact bundle name.
+    required: false
+    default: security-repo-scans
+  retention-days:
+    description: Artifact retention period in days.
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare / Workspace
+      uses: ./.github/actions/prepare-workspace
+      with:
+        cache-tools: "true"
+
+    - name: Prepare / Scope gitleaks scan
+      id: gitleaks_scope
+      shell: bash
+      run: scripts/security/derive_gitleaks_scope.sh
+
+    - name: Verify / Run repo security checks
+      id: repo_scans
+      shell: bash
+      run: |
+        set -euo pipefail
+        just ci-security 2>&1 | tee artifacts/repo-security.log
+
+    - name: Report / Publish results
+      if: always()
+      uses: ./.github/actions/report-job
+      with:
+        title: Security / Repo Scans
+        summary: |
+          | Item | Result |
+          | --- | --- |
+          | Repo security checks | ${{ steps.repo_scans.outcome }} |
+          | Gitleaks scope | `${{ steps.gitleaks_scope.outputs.scope }}` |
+          | Artifacts | `${{ inputs.artifact-name }}` |
+        artifact-name: ${{ inputs.artifact-name }}
+        artifact-path: artifacts/
+        retention-days: ${{ inputs.retention-days }}

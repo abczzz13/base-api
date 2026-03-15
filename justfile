@@ -10,6 +10,7 @@ goimports_version := "v0.42.0"
 govulncheck_version := "v1.1.4"
 gitleaks_version := "v8.30.0"
 actionlint_version := "v1.7.8"
+shellcheck_version := "v0.10.0"
 sqlc_version := "v1.27.0"
 goose_version := "v3.27.0"
 sqlc_docker_image := "sqlc/sqlc:1.27.0"
@@ -22,6 +23,8 @@ goimports := ".bin/goimports"
 govulncheck := ".bin/govulncheck"
 gitleaks := ".bin/gitleaks"
 actionlint := ".bin/actionlint"
+shellcheck := ".bin/shellcheck"
+shellcheck_version_file := ".bin/shellcheck.version"
 sqlc := ".bin/sqlc"
 goose := ".bin/goose"
 db_migrations_dir := "db/migrations"
@@ -140,6 +143,44 @@ tools:
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/rhysd/actionlint/cmd/actionlint@{{actionlint_version}}
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/sqlc-dev/sqlc/cmd/sqlc@{{sqlc_version}} || printf 'Warning: failed to install sqlc locally; sqlc commands will use Docker fallback\n'
     GOBIN="${PWD}/{{bin_dir}}" go install github.com/pressly/goose/v3/cmd/goose@{{goose_version}}
+    just --quiet _install-shellcheck
+
+[script]
+_install-shellcheck:
+    if [ -x "{{shellcheck}}" ] && [ -f "{{shellcheck_version_file}}" ] && [ "$(cat "{{shellcheck_version_file}}")" = "{{shellcheck_version}}" ]; then
+        exit 0
+    fi
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os" in
+        Darwin) platform_os="darwin" ;;
+        Linux) platform_os="linux" ;;
+        *)
+            printf 'Unsupported OS for shellcheck: %s\n' "$os"
+            exit 1
+            ;;
+    esac
+
+    case "$arch" in
+        arm64|aarch64) platform_arch="aarch64" ;;
+        x86_64|amd64) platform_arch="x86_64" ;;
+        *)
+            printf 'Unsupported architecture for shellcheck: %s\n' "$arch"
+            exit 1
+            ;;
+    esac
+
+    archive="shellcheck-{{shellcheck_version}}.${platform_os}.${platform_arch}.tar.xz"
+    url="https://github.com/koalaman/shellcheck/releases/download/{{shellcheck_version}}/${archive}"
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+
+    curl -fsSL "$url" -o "$tmpdir/$archive"
+    tar -xJf "$tmpdir/$archive" -C "$tmpdir"
+    install -m 0755 "$tmpdir/shellcheck-{{shellcheck_version}}/shellcheck" "{{shellcheck}}"
+    printf '%s\n' '{{shellcheck_version}}' > "{{shellcheck_version_file}}"
 
 [script]
 db-up: env-init
@@ -211,6 +252,7 @@ check-tools:
     [ -x "{{gofumpt}}" ] || missing+=("{{gofumpt}}")
     [ -x "{{goimports}}" ] || missing+=("{{goimports}}")
     [ -x "{{actionlint}}" ] || missing+=("{{actionlint}}")
+    [ -x "{{shellcheck}}" ] || missing+=("{{shellcheck}}")
 
     if [ "${#missing[@]}" -ne 0 ]; then
         printf 'Missing required local tools:\n'
@@ -306,9 +348,26 @@ lint-yaml: check-tools
 
 lint-actions: check-tools
     just check-action-pins
-    {{actionlint}}
+    PATH="${PWD}/{{bin_dir}}:$PATH" {{actionlint}}
 
-lint: lint-go lint-yaml lint-actions
+[script]
+lint-shell: check-tools
+    files=()
+    while IFS= read -r file; do
+        if [ ! -f "$file" ]; then
+            continue
+        fi
+
+        files+=("$file")
+    done < <(git ls-files --cached --others --exclude-standard -- 'scripts/*.sh' 'scripts/**/*.sh')
+
+    if [ "${#files[@]}" -eq 0 ]; then
+        exit 0
+    fi
+
+    {{shellcheck}} "${files[@]}"
+
+lint: lint-go lint-yaml lint-actions lint-shell
 
 [script]
 check-security-tools:

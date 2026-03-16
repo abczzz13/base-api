@@ -26,7 +26,7 @@ while :; do
     workflow_state="$({
       jq -r \
         --arg workflow_name "$workflow_name" \
-        'first(.workflow_runs[] | select(.name == $workflow_name) | "\(.status):\(.conclusion // "")") // empty'
+        'first(.workflow_runs[] | select(.name | startswith($workflow_name)) | "\(.status):\(.conclusion // "")") // empty'
     } <<<"$runs_json")"
 
     if [ -z "$workflow_state" ]; then

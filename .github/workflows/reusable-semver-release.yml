@@ -1,0 +1,71 @@
+name: Reusable Semver Release
+
+on:
+  workflow_call:
+    inputs:
+      source_branch:
+        description: Branch name for the source push.
+        required: true
+        type: string
+      source_sha:
+        description: Commit SHA for the source push.
+        required: true
+        type: string
+    secrets:
+      release_token:
+        description: Token used to push tags and create GitHub releases.
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Verify / Wait for required workflows
+        id: required_workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: scripts/release/wait_for_required_workflows.sh
+
+      - name: Release / Publish semver tag
+        id: semantic_release
+        uses: go-semantic-release/action@2e9dc4247a6004f8377781bef4cb9dad273a741f # v1.24.1
+        with:
+          github-token: ${{ secrets.release_token }}
+
+      - name: Report / Publish results
+        if: always()
+        env:
+          REQUIRED_WORKFLOWS_OUTCOME: ${{ steps.required_workflows.outcome }}
+          SEMANTIC_RELEASE_OUTCOME: ${{ steps.semantic_release.outcome }}
+          SEMANTIC_RELEASE_VERSION: ${{ steps.semantic_release.outputs.version }}
+        run: |
+          {
+            printf "## Release\n\n"
+            printf "| Item | Result |\n"
+            printf "| --- | --- |\n"
+            printf "| Required workflows | %s |\n" "$REQUIRED_WORKFLOWS_OUTCOME"
+            printf "| go-semantic-release | %s |\n" "$SEMANTIC_RELEASE_OUTCOME"
+            printf "| Version | \`%s\` |\n" "$SEMANTIC_RELEASE_VERSION"
+            printf "| Branch | \`%s\` |\n" "$GITHUB_REF_NAME"
+            printf "| Ref | \`%s\` |\n" "$GITHUB_REF"
+          } >> "$GITHUB_STEP_SUMMARY"

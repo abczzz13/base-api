@@ -62,3 +62,10 @@ just security
 - Explain the reason for the change.
 - Mention any migration, config, or rollout concerns.
 - Include verification steps when behavior is not obvious from tests alone.
+
+## Commit Messages
+
+- Use Conventional Commits because release tags and GitHub Release notes are generated automatically from commit history.
+- Common prefixes are `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, and `chore:`.
+- Mark breaking changes with `!` in the subject, such as `feat!: remove legacy auth`, or add a `BREAKING CHANGE:` footer.
+- Keep the subject line focused on the user-visible change so release notes stay readable.

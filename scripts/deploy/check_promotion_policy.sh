@@ -20,9 +20,9 @@ source_ref="$(jq -r '.source_ref // empty' "$metadata_file")"
 source_ref_name="$(jq -r '.source_ref_name // empty' "$metadata_file")"
 source_type="$(jq -r '.source_type // empty' "$metadata_file")"
 source_sha="$(jq -r '.source_sha // empty' "$metadata_file")"
-head_branch="${HEAD_BRANCH}"
-head_sha="${HEAD_SHA}"
-run_event="${RUN_EVENT}"
+head_branch="${HEAD_BRANCH:?HEAD_BRANCH is required}"
+head_sha="${HEAD_SHA:?HEAD_SHA is required}"
+run_event="${RUN_EVENT:?RUN_EVENT is required}"
 
 if [ "$repository" != "$GITHUB_REPOSITORY" ]; then
   printf '::error::Trusted metadata belongs to %s, expected %s.\n' "$repository" "$GITHUB_REPOSITORY"

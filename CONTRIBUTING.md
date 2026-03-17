@@ -4,11 +4,13 @@ Thanks for contributing.
 
 ## Development Workflow
 
-1. Install tooling:
+1. Enter the dev shell:
 
 ```bash
-just tools
+nix develop
 ```
+
+If you use Nushell, `nix-direnv` is usually the smoothest option because it keeps you in your existing shell instead of spawning a separate `nix develop` session.
 
 2. Start local dependencies when needed:
 
@@ -28,8 +30,8 @@ just ogen-generate
 5. Run the full quality gate before opening a PR:
 
 ```bash
-just check
-just security
+nix develop -c just check
+nix develop -c just security
 ```
 
 ## Coding Expectations

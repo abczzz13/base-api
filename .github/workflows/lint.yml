@@ -15,11 +15,12 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   lint:
     name: Lint
-    uses: ./.github/workflows/reusable-go-lint.yml
+    uses: ./.github/workflows/reusable-nix-lint.yml
     with:
       artifact_name: lint-logs
       retention_days: 14

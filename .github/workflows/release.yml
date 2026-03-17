@@ -12,6 +12,7 @@ jobs:
     permissions:
       actions: read
       contents: write
+      id-token: write
     uses: ./.github/workflows/reusable-semver-release.yml
     with:
       source_branch: ${{ github.ref_name }}

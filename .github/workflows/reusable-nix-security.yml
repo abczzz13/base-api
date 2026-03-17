@@ -1,0 +1,60 @@
+name: Reusable Nix Repo Security
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Uploaded artifact bundle name.
+        required: false
+        type: string
+        default: security-repo-scans
+      retention_days:
+        description: Artifact retention period in days.
+        required: false
+        type: number
+        default: 14
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Prepare / Workspace
+        uses: ./.github/actions/prepare-workspace-nix
+
+      - name: Prepare / Scope gitleaks scan
+        id: gitleaks_scope
+        run: scripts/security/derive_gitleaks_scope.sh
+
+      - name: Verify / Run repo security checks
+        id: repo_scans
+        run: |
+          set -euo pipefail
+          nix develop -c just ci-security 2>&1 | tee artifacts/repo-security.log
+
+      - name: Report / Publish results
+        if: always()
+        uses: ./.github/actions/report-job
+        with:
+          title: Security / Repo Scans
+          summary: |
+            | Item | Result |
+            | --- | --- |
+            | Repo security checks | ${{ steps.repo_scans.outcome }} |
+            | Gitleaks scope | `${{ steps.gitleaks_scope.outputs.scope }}` |
+            | Artifacts | `${{ inputs.artifact_name }}` |
+          artifact-name: ${{ inputs.artifact_name }}
+          artifact-path: artifacts/
+          retention-days: ${{ inputs.retention_days }}

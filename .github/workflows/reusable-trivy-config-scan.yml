@@ -17,7 +17,7 @@ on:
         description: Comma-separated directories to skip.
         required: false
         type: string
-        default: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,.bin,build
+        default: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,build,.direnv
       severity:
         description: Severity threshold list.
         required: false

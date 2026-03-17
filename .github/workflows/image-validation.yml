@@ -15,11 +15,12 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   image_validation:
     name: Image Validation
-    uses: ./.github/workflows/reusable-image-validation.yml
+    uses: ./.github/workflows/reusable-nix-image-validation.yml
     with:
       artifact_name: image-validation-logs
       retention_days: 14

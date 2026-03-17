@@ -1,5 +1,7 @@
 .bin/
+.direnv/
 build/
 .env
 coverage.out
 coverage-all.out
+result

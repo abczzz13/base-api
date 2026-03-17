@@ -1,0 +1,103 @@
+name: Reusable Nix Test
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Uploaded artifact bundle name.
+        required: false
+        type: string
+        default: test-logs
+      retention_days:
+        description: Artifact retention period in days.
+        required: false
+        type: number
+        default: 14
+      db_image:
+        description: PostgreSQL service image.
+        required: false
+        type: string
+        default: postgres:18-alpine
+      db_name:
+        description: Database name.
+        required: false
+        type: string
+        default: base_api
+      db_user:
+        description: Database user.
+        required: false
+        type: string
+        default: postgres
+      db_password:
+        description: Database password.
+        required: false
+        type: string
+        default: postgres
+      db_port:
+        description: Database port.
+        required: false
+        type: number
+        default: 5432
+      db_url:
+        description: Database URL for runtime and tests.
+        required: false
+        type: string
+        default: postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=disable
+      test_db_url:
+        description: Database URL used by the test suite.
+        required: false
+        type: string
+        default: postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=disable
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DB_URL: ${{ inputs.db_url }}
+      TEST_DB_URL: ${{ inputs.test_db_url }}
+    services:
+      postgres:
+        image: ${{ inputs.db_image }}
+        env:
+          POSTGRES_DB: ${{ inputs.db_name }}
+          POSTGRES_USER: ${{ inputs.db_user }}
+          POSTGRES_PASSWORD: ${{ inputs.db_password }}
+        ports:
+          - ${{ inputs.db_port }}:5432
+        options: >-
+          --health-cmd "pg_isready -U \"${{ inputs.db_user }}\" -d \"${{ inputs.db_name }}\"" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare / Workspace
+        uses: ./.github/actions/prepare-workspace-nix
+
+      - name: Verify / Run test suite
+        id: test_suite
+        run: |
+          set -euo pipefail
+          nix develop -c just ci-test 2>&1 | tee artifacts/test.log
+
+      - name: Report / Publish results
+        if: always()
+        uses: ./.github/actions/report-job
+        with:
+          title: Test
+          summary: |
+            | Item | Result |
+            | --- | --- |
+            | Test suite | ${{ steps.test_suite.outcome }} |
+            | PostgreSQL service | enabled |
+            | Artifacts | `${{ inputs.artifact_name }}` |
+          artifact-name: ${{ inputs.artifact_name }}
+          artifact-path: artifacts/
+          retention-days: ${{ inputs.retention_days }}

@@ -1,0 +1,18 @@
+name: Prepare Workspace With Nix
+description: Setup Nix tooling and optionally create the artifacts directory.
+
+inputs:
+  create-artifacts-dir:
+    description: Create the artifacts directory.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Nix
+      uses: ./.github/actions/setup-nix
+
+    - name: Create artifacts directory
+      if: inputs.create-artifacts-dir == 'true'
+      shell: bash
+      run: mkdir -p artifacts

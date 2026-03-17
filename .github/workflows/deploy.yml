@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 defaults:
   run:
@@ -31,6 +32,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      id-token: write
     outputs:
       publish_run_id: ${{ steps.run.outputs.publish_run_id }}
       publish_run_url: ${{ steps.run.outputs.publish_run_url }}
@@ -45,17 +47,16 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Workspace
-        uses: ./.github/actions/prepare-workspace
+        uses: ./.github/actions/prepare-workspace-nix
         with:
-          setup-go: "false"
-          setup-just: "false"
+          create-artifacts-dir: "false"
 
       - name: Validate / Resolve delivery run
         id: run
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_PUBLISH_RUN_ID: ${{ inputs.publish-run-id }}
-        run: scripts/deploy/resolve_publish_run.sh
+        run: nix develop -c scripts/deploy/resolve_publish_run.sh
 
       - name: Validate / Download trusted metadata
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -76,7 +77,7 @@ jobs:
           PUBLISH_RUN_ID: ${{ steps.run.outputs.publish_run_id }}
           RUN_EVENT: ${{ steps.run.outputs.run_event }}
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
-        run: scripts/deploy/check_promotion_policy.sh
+        run: nix develop -c scripts/deploy/check_promotion_policy.sh
 
   deploy:
     name: Deploy / ${{ inputs.environment }}
@@ -87,15 +88,15 @@ jobs:
       group: deploy-${{ inputs.environment }}
       cancel-in-progress: false
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Prepare / Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Workspace
-        uses: ./.github/actions/prepare-workspace
-        with:
-          setup-go: "false"
-          setup-just: "true"
+        uses: ./.github/actions/prepare-workspace-nix
 
       - name: Deploy / Run deployment
         id: deploy
@@ -104,9 +105,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ '${{ inputs.environment }}' = 'production' ]; then
-            just deploy-prod 2>&1 | tee artifacts/deploy.log
+            nix develop -c just deploy-prod 2>&1 | tee artifacts/deploy.log
           else
-            just deploy-test 2>&1 | tee artifacts/deploy.log
+            nix develop -c just deploy-test 2>&1 | tee artifacts/deploy.log
           fi
 
       - name: Report / Notify Slack

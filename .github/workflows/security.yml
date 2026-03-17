@@ -16,6 +16,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 defaults:
   run:
@@ -24,7 +25,7 @@ defaults:
 jobs:
   repo_security:
     name: Security / Repo Scans
-    uses: ./.github/workflows/reusable-repo-security.yml
+    uses: ./.github/workflows/reusable-nix-security.yml
     with:
       artifact_name: security-repo-scans
       retention_days: 14
@@ -70,7 +71,7 @@ jobs:
     with:
       title: Security / Trivy Config Scan
       scan_ref: .
-      skip_dirs: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,.bin,build
+      skip_dirs: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,build,.direnv
       severity: HIGH,CRITICAL
       sarif_file: artifacts/trivy-config.sarif
       gate_file: artifacts/trivy-config.txt
@@ -87,13 +88,14 @@ jobs:
     permissions:
       actions: read
       contents: read
+      id-token: write
       security-events: write
     steps:
       - name: Prepare / Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare / Workspace
-        uses: ./.github/actions/prepare-workspace
+        uses: ./.github/actions/prepare-workspace-nix
 
       - name: Prepare / Initialize CodeQL
         uses: github/codeql-action/init@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
@@ -105,7 +107,7 @@ jobs:
         id: codeql_build
         run: |
           set -euo pipefail
-          just build-go 2>&1 | tee artifacts/codeql-build.log
+          nix develop -c just build-go 2>&1 | tee artifacts/codeql-build.log
 
       - name: Verify / Analyze with CodeQL
         id: codeql_analyze

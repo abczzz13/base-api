@@ -54,18 +54,34 @@ When `WEATHER_ENABLED=true`, it calls a fixed-origin upstream through the shared
 
 ### Prerequisites
 
-- Go `1.26+`
-- `just`
+- Nix with flakes enabled
 - Docker
+
+The Nix dev shell provides Go, `just`, and the full repo toolchain.
+This repo commits `.envrc` on purpose so `nix-direnv` users can run `direnv allow` once and auto-load the shared project shell.
 
 ### Local development
 
 ```bash
-just tools
+nix develop
 just env-init
 just compose-up
 just check
 ```
+
+Quick verification from any shell:
+
+```bash
+nix develop -c just check
+```
+
+If you prefer a helper command that reuses your current shell, run:
+
+```bash
+just shell
+```
+
+If you use Nushell, `nix-direnv` is usually the smoothest option because it keeps you in your existing shell instead of spawning a separate `nix develop` session.
 
 Useful endpoints after startup:
 
@@ -79,6 +95,7 @@ Useful endpoints after startup:
 Run directly on the host instead of compose:
 
 ```bash
+nix develop
 cp .env.example .env
 # Edit .env and set WEATHER_ENABLED=true to enable the example endpoint.
 just db-start
@@ -88,21 +105,23 @@ just run
 ## Common Commands
 
 ```bash
-just tools
+nix develop
 just fmt
+just fmt-nix
 just lint-actions
 just test
 just check
 just security
 just pre-pr
+just flake-check
 just sqlc-generate
 just ogen-generate
 ```
 
 ## Automation
 
-- `CI` runs `just check` plus container build validation on pull requests, `main`, and manual dispatches.
-- `Security` runs `just security`, optionally runs GitHub dependency review when the `ENABLE_DEPENDENCY_REVIEW` repository variable is set to `true`, runs Trivy config scanning, uploads Trivy SARIF into GitHub code scanning, and runs CodeQL on pull requests, `main`, a weekly schedule, and manual dispatches.
+- `CI` runs repository checks inside the pinned Nix dev shell plus container build validation on pull requests, `main`, and manual dispatches.
+- `Security` runs repository security checks inside the pinned Nix dev shell, optionally runs GitHub dependency review when the `ENABLE_DEPENDENCY_REVIEW` repository variable is set to `true`, runs Trivy config scanning, uploads Trivy SARIF into GitHub code scanning, and runs CodeQL on pull requests, `main`, a weekly schedule, and manual dispatches.
 - `Release` runs on pushes to `main`, waits for successful `Lint`, `Test`, `Image Validation`, and `Security` runs for the same commit, then runs `go-semantic-release` to derive the next semver tag from Conventional Commits and create the GitHub Release. Configure the `RELEASE_TOKEN` secret so the generated `v*` tag can trigger downstream publish automation.
 - `Publish` builds and scans per-platform image archives before publishing multi-arch `ghcr.io/abczzz13/base-api` images for `main`, `v*` tags, and manual feature-branch preview publishes, signs images with `cosign`, and emits deploy metadata.
 - `Deploy` is a manual `workflow_dispatch` workflow that promotes a successful `Publish` run to `test` or `production` after cross-checking the publish metadata against immutable GitHub run data. Successful published runs from `main`, manual feature-branch previews, and `v*` tags may deploy to `test`; only successful tag-push runs built from `v*` tags may deploy to `production`.
@@ -123,9 +142,9 @@ When starting a new service, update the project identity before adding features.
 After renaming, regenerate code and verify everything still passes:
 
 ```bash
-just sqlc-generate
-just ogen-generate
-just check
+nix develop -c just sqlc-generate
+nix develop -c just ogen-generate
+nix develop -c just check
 ```
 
 ## Development Notes

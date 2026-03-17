@@ -15,11 +15,12 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   test:
     name: Test
-    uses: ./.github/workflows/reusable-go-test.yml
+    uses: ./.github/workflows/reusable-nix-test.yml
     with:
       artifact_name: test-logs
       retention_days: 14

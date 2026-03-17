@@ -1,0 +1,53 @@
+name: Reusable Nix Lint
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Uploaded artifact bundle name.
+        required: false
+        type: string
+        default: lint-logs
+      retention_days:
+        description: Artifact retention period in days.
+        required: false
+        type: number
+        default: 14
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Prepare / Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare / Workspace
+        uses: ./.github/actions/prepare-workspace-nix
+
+      - name: Verify / Run lint and Nix checks
+        id: lint_checks
+        run: |
+          set -euo pipefail
+          nix develop -c just ci-lint 2>&1 | tee artifacts/lint.log
+
+      - name: Report / Publish results
+        if: always()
+        uses: ./.github/actions/report-job
+        with:
+          title: Lint
+          summary: |
+            | Item | Result |
+            | --- | --- |
+            | Lint and Nix checks | ${{ steps.lint_checks.outcome }} |
+            | Artifacts | `${{ inputs.artifact_name }}` |
+          artifact-name: ${{ inputs.artifact_name }}
+          artifact-path: artifacts/
+          retention-days: ${{ inputs.retention_days }}

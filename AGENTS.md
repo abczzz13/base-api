@@ -4,14 +4,16 @@ Guidelines for AI agents working on this codebase.
 
 ## Commands
 
-Use `just` commands for all checks and builds. Install tools first if needed:
+Use `just` commands for all checks and builds from inside `nix develop`:
 
 ```bash
-just tools        # Install required tools (golangci-lint, gofumpt, etc.)
+nix develop       # Enter the pinned project toolchain
 just check        # Run formatting check, linting, and tests
 just security     # Run vulnerability and secret scanning
 just pre-pr       # Full pre-PR quality gate (check + security)
 ```
+
+Canonical verification path: `nix develop -c just check`.
 
 **Important:** Always run `just check` after making code changes to verify formatting, linting, and tests pass.
 

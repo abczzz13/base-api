@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/abczzz13/base-api/internal/logger"
-	"github.com/abczzz13/base-api/internal/publicroute"
+	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 	"github.com/abczzz13/base-api/internal/valkey"
@@ -21,7 +21,6 @@ const (
 	defaultWriteTimeout            = 30 * time.Second
 	defaultIdleTimeout             = 60 * time.Second
 	defaultCORSMaxAge              = 5 * time.Minute
-	defaultWeatherEnabled          = false
 	defaultWeatherGeocodingBaseURL = "https://geocoding-api.open-meteo.com"
 	defaultWeatherForecastBaseURL  = "https://api.open-meteo.com"
 	defaultWeatherTimeout          = 5 * time.Second
@@ -73,17 +72,16 @@ func defaultConfig() Config {
 				Burst:             defaultRateLimitDefaultBurst,
 			},
 			RouteOverrides: map[string]ratelimit.RouteOverride{
-				publicroute.OperationGetHealthz: {Disabled: true},
+				publicoas.GetHealthzOperation: {Disabled: true},
 			},
 		},
 		OTEL: OTELConfig{
 			TracesSampler: telemetry.DefaultTraceSampler,
 		},
 		Weather: WeatherConfig{
-			IntegrationEnabled: defaultWeatherEnabled,
-			GeocodingBaseURL:   defaultWeatherGeocodingBaseURL,
-			ForecastBaseURL:    defaultWeatherForecastBaseURL,
-			Timeout:            defaultWeatherTimeout,
+			GeocodingBaseURL: defaultWeatherGeocodingBaseURL,
+			ForecastBaseURL:  defaultWeatherForecastBaseURL,
+			Timeout:          defaultWeatherTimeout,
 		},
 		DB: DBConfig{
 			MinConns:              defaultDBMinConns,

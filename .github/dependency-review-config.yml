@@ -1,0 +1,12 @@
+version: 1
+
+allow:
+  - dependency-type: direct
+  - dependency-type: indirect
+
+fail-on-severity: moderate
+
+deny-licenses:
+  - GPL-2.0
+  - GPL-3.0
+  - AGPL-3.0

@@ -12,6 +12,8 @@ import (
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
+	"github.com/abczzz13/base-api/internal/weatherapi"
+	"github.com/abczzz13/base-api/internal/weatheroas"
 )
 
 // Dependencies contains runtime dependencies needed by the public handler.
@@ -27,8 +29,12 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 	if deps.RequestMetrics == nil {
 		return nil, errors.New("request metrics dependency is required")
 	}
+	if deps.WeatherClient == nil {
+		return nil, errors.New("weather client dependency is required")
+	}
 
-	baseService := NewService(deps.WeatherClient)
+	baseService := NewService()
+	weatherService := weatherapi.NewService(deps.WeatherClient)
 
 	var clientIPResolver *clientip.Resolver
 	if cfg.RequestAudit.IsEnabled() || cfg.RateLimit.IsEnabled() {
@@ -40,15 +46,30 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 		serverOptions = append(serverOptions, publicoas.WithMiddleware(middleware.OTELOperationAttributes()))
 	}
 
-	baseAPI, err := publicoas.NewServer(baseService, serverOptions...)
+	baseAPI, err := publicoas.NewServer(NewOASHandler(baseService), serverOptions...)
 	if err != nil {
 		return nil, err
 	}
 
-	routeLabel := requestMetricsRouteLabeler(baseAPI)
+	weatherServerOptions := []weatheroas.ServerOption{weatheroas.WithErrorHandler(apierrors.OgenErrorHandler)}
+	if cfg.OTEL.TracingEnabled {
+		weatherServerOptions = append(weatherServerOptions, weatheroas.WithMiddleware(middleware.OTELOperationAttributes()))
+	}
+
+	weatherAPI, err := weatheroas.NewServer(weatherapi.NewOASHandler(weatherService), weatherServerOptions...)
+	if err != nil {
+		return nil, err
+	}
+
+	appMux := http.NewServeMux()
+	appMux.Handle("/weather/", weatherAPI)
+	appMux.Handle("/", baseAPI)
+
+	routeLabel := requestMetricsRouteLabeler(coreRouteLabeler(baseAPI), weatherapi.RouteLabeler(weatherAPI))
 
 	middlewares := make([]func(http.Handler) http.Handler, 0, 10)
 	middlewares = append(middlewares,
+		middleware.Recovery(),
 		middleware.RequestID(),
 		middleware.RequestMetrics(deps.RequestMetrics, middleware.RequestMetricsConfig{
 			Server:     "public",
@@ -83,7 +104,6 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 	}
 
 	middlewares = append(middlewares,
-		middleware.Recovery(),
 		middleware.CORS(middleware.CORSConfig{
 			AllowedOrigins:   cfg.CORS.AllowedOrigins,
 			AllowedMethods:   cfg.CORS.AllowedMethods,
@@ -117,5 +137,5 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 		}))
 	}
 
-	return middleware.NewChain(middlewares...).WrapHandler(baseAPI), nil
+	return middleware.NewChain(middlewares...).WrapHandler(appMux), nil
 }

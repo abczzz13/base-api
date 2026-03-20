@@ -223,7 +223,7 @@ func TestCORSPolicyDenialIncrementsMetric(t *testing.T) {
 
 	server := "cors_policy_denial_metric"
 	method := http.MethodGet
-	route := "getHealthz"
+	route := "GetHealthz"
 	before := testutil.ToFloat64(requestMetrics.httpCORSPolicyDenialsTotal.WithLabelValues(server, method, route))
 
 	handler := RequestMetrics(requestMetrics, RequestMetricsConfig{

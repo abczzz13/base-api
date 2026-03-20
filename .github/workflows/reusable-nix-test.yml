@@ -56,7 +56,7 @@ defaults:
 jobs:
   run:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     permissions:
       contents: read
       id-token: write
@@ -87,6 +87,18 @@ jobs:
           set -euo pipefail
           nix develop -c just ci-test 2>&1 | tee artifacts/test.log
 
+      - name: Verify / Run race detector
+        id: race_suite
+        run: |
+          set -euo pipefail
+          nix develop -c just ci-race 2>&1 | tee artifacts/test-race.log
+
+      - name: Verify / Enforce coverage gate
+        id: coverage_gate
+        run: |
+          set -euo pipefail
+          nix develop -c just ci-coverage 2>&1 | tee artifacts/test-coverage.log
+
       - name: Report / Publish results
         if: always()
         uses: ./.github/actions/report-job
@@ -96,6 +108,8 @@ jobs:
             | Item | Result |
             | --- | --- |
             | Test suite | ${{ steps.test_suite.outcome }} |
+            | Race detector | ${{ steps.race_suite.outcome }} |
+            | Coverage gate | ${{ steps.coverage_gate.outcome }} |
             | PostgreSQL service | enabled |
             | Artifacts | `${{ inputs.artifact_name }}` |
           artifact-name: ${{ inputs.artifact_name }}

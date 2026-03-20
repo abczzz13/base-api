@@ -8,14 +8,23 @@ import (
 
 	"github.com/abczzz13/base-api/internal/apierrors"
 	"github.com/abczzz13/base-api/internal/config"
-	geninfra "github.com/abczzz13/base-api/internal/infraoas"
-	"github.com/abczzz13/base-api/internal/requestid"
 	"github.com/abczzz13/base-api/internal/version"
 )
 
-var _ geninfra.Handler = (*Service)(nil)
+// ProbeResponse is the handwritten infra probe payload.
+type ProbeResponse struct {
+	Status string
+}
 
-// Service implements the infra OAS-generated handler interface.
+// HealthResponse is the handwritten infra health payload.
+type HealthResponse struct {
+	Status      string
+	Version     string
+	Timestamp   string
+	Environment string
+}
+
+// Service contains handwritten infra API behavior, independent of generated transport types.
 type Service struct {
 	cfg               config.Config
 	readinessCheckers []ReadinessChecker
@@ -36,11 +45,11 @@ func NewService(cfg config.Config, readinessCheckers ...ReadinessChecker) *Servi
 	}
 }
 
-func (s *Service) GetLivez(ctx context.Context) (*geninfra.ProbeResponseHeaders, error) {
-	return probeResponseWithRequestID(ctx, geninfra.ProbeResponse{Status: "OK"}), nil
+func (s *Service) GetLivez(context.Context) (ProbeResponse, error) {
+	return ProbeResponse{Status: "OK"}, nil
 }
 
-func (s *Service) GetReadyz(ctx context.Context) (*geninfra.ProbeResponseHeaders, error) {
+func (s *Service) GetReadyz(ctx context.Context) (ProbeResponse, error) {
 	checkCtx := ctx
 	cancel := func() {}
 	if s.cfg.ReadyzTimeout > 0 {
@@ -55,40 +64,18 @@ func (s *Service) GetReadyz(ctx context.Context) (*geninfra.ProbeResponseHeaders
 				slog.Int("checker_index", idx),
 				slog.Any("error", err),
 			)
-			return nil, apierrors.New(http.StatusServiceUnavailable, "not_ready", "service is not ready").WithContext(ctx).InfraOASDefault()
+			return ProbeResponse{}, apierrors.New(http.StatusServiceUnavailable, "not_ready", "service is not ready")
 		}
 	}
 
-	return probeResponseWithRequestID(ctx, geninfra.ProbeResponse{Status: "OK"}), nil
+	return ProbeResponse{Status: "OK"}, nil
 }
 
-func (s *Service) GetHealthz(ctx context.Context) (*geninfra.HealthResponseHeaders, error) {
-	response := &geninfra.HealthResponseHeaders{
-		Response: geninfra.HealthResponse{
-			Status:      "OK",
-			Version:     version.GetVersion(),
-			Timestamp:   time.Now().Format(time.RFC3339),
-			Environment: s.cfg.Environment,
-		},
-	}
-	if requestID := requestid.FromContext(ctx); requestID != "" {
-		response.XRequestID = geninfra.NewOptString(requestID)
-	}
-
-	return response, nil
-}
-
-func (s *Service) NewError(ctx context.Context, err error) *geninfra.DefaultErrorStatusCodeWithHeaders {
-	_ = err
-
-	return apierrors.New(http.StatusInternalServerError, "internal_error", "internal server error").WithContext(ctx).InfraOASDefault()
-}
-
-func probeResponseWithRequestID(ctx context.Context, response geninfra.ProbeResponse) *geninfra.ProbeResponseHeaders {
-	wrapped := &geninfra.ProbeResponseHeaders{Response: response}
-	if requestID := requestid.FromContext(ctx); requestID != "" {
-		wrapped.XRequestID = geninfra.NewOptString(requestID)
-	}
-
-	return wrapped
+func (s *Service) GetHealthz(context.Context) (HealthResponse, error) {
+	return HealthResponse{
+		Status:      "OK",
+		Version:     version.GetVersion(),
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Environment: s.cfg.Environment,
+	}, nil
 }

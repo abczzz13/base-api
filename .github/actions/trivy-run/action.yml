@@ -25,8 +25,8 @@ inputs:
     description: Ignore unfixed findings.
     required: false
     default: "false"
-  vuln-type:
-    description: Vulnerability type filter.
+  pkg-types:
+    description: Package types to scan.
     required: false
     default: ""
   scanners:
@@ -67,7 +67,7 @@ runs:
         INPUT_SCANNERS: ${{ inputs.scanners }}
         INPUT_SEVERITY: ${{ inputs.severity }}
         INPUT_SKIP_DIRS: ${{ inputs.skip-dirs }}
-        INPUT_VULN_TYPE: ${{ inputs.vuln-type }}
+        INPUT_PKG_TYPES: ${{ inputs.pkg-types }}
       run: |
         set -euo pipefail
 
@@ -81,8 +81,8 @@ runs:
           args+=(--ignore-unfixed)
         fi
 
-        if [ -n "$INPUT_VULN_TYPE" ]; then
-          args+=(--vuln-type "$INPUT_VULN_TYPE")
+        if [ -n "$INPUT_PKG_TYPES" ]; then
+          args+=(--pkg-types "$INPUT_PKG_TYPES")
         fi
 
         if [ -n "$INPUT_SCANNERS" ]; then

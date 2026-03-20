@@ -6,6 +6,5 @@ package publicoas
 type OperationName = string
 
 const (
-	GetCurrentWeatherOperation OperationName = "GetCurrentWeather"
-	GetHealthzOperation        OperationName = "GetHealthz"
+	GetHealthzOperation OperationName = "GetHealthz"
 )

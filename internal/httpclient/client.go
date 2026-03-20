@@ -112,10 +112,6 @@ func New(cfg Config) (*Service, error) {
 
 // HTTPClient returns the wrapped HTTP client.
 func (s *Service) HTTPClient() *http.Client {
-	if s == nil {
-		return nil
-	}
-
 	return s.httpClient
 }
 

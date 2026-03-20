@@ -14,6 +14,7 @@ import (
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestid"
+	"github.com/abczzz13/base-api/internal/weatheroas"
 )
 
 func TestWriteErrorProducesOASCompatiblePayload(t *testing.T) {
@@ -71,7 +72,7 @@ func TestWriteMatchesPublicGeneratedErrorEncoding(t *testing.T) {
 	actual := httptest.NewRecorder()
 	apiErr.Write(actual)
 
-	server, err := publicoas.NewServer(publicErrorHandler{err: apiErr.OASDefault()})
+	server, err := publicoas.NewServer(publicErrorHandler{err: publicDefaultError(apiErr)})
 	if err != nil {
 		t.Fatalf("create public oas server: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestWritePublicTooManyRequestsMatchesGeneratedEncoding(t *testing.T) {
 	apiErr.WritePublicTooManyRequests(actual, headers)
 
 	expected := httptest.NewRecorder()
-	server, err := publicoas.NewServer(publicExplicitErrorHandler{healthz: apiErr.OASTooManyRequests(headers)})
+	server, err := publicoas.NewServer(publicExplicitErrorHandler{healthz: publicTooManyRequestsError(apiErr, headers)})
 	if err != nil {
 		t.Fatalf("create public oas server: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestWritePublicServiceUnavailableMatchesGeneratedEncoding(t *testing.T) {
 	apiErr.WritePublicServiceUnavailable(actual)
 
 	expected := httptest.NewRecorder()
-	server, err := publicoas.NewServer(publicExplicitErrorHandler{healthz: apiErr.OASServiceUnavailable()})
+	server, err := publicoas.NewServer(publicExplicitErrorHandler{healthz: publicServiceUnavailableError(apiErr)})
 	if err != nil {
 		t.Fatalf("create public oas server: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestWriteMatchesInfraGeneratedErrorEncoding(t *testing.T) {
 	actual := httptest.NewRecorder()
 	apiErr.Write(actual)
 
-	server, err := infraoas.NewServer(infraErrorHandler{err: apiErr.InfraOASDefault()})
+	server, err := infraoas.NewServer(infraErrorHandler{err: infraDefaultError(apiErr)})
 	if err != nil {
 		t.Fatalf("create infra oas server: %v", err)
 	}
@@ -193,14 +194,21 @@ func TestWriteMatchesInfraGeneratedErrorEncoding(t *testing.T) {
 	}
 }
 
-func TestErrorConversionsStayAlignedBetweenSpecs(t *testing.T) {
+func TestErrorConversionsStayAlignedAcrossSpecs(t *testing.T) {
 	apiErr := New(http.StatusUnauthorized, "unauthorized", "unauthorized").WithRequestID("req-123")
 
-	publicErr := apiErr.OASDefault()
-	infraErr := apiErr.InfraOASDefault()
+	publicErr := publicDefaultError(apiErr)
+	infraErr := infraDefaultError(apiErr)
+	weatherErr := weatherDefaultError(apiErr)
 
-	if diff := cmp.Diff(publicErr.StatusCode, infraErr.StatusCode); diff != "" {
-		t.Fatalf("status mismatch (-want +got):\n%s", diff)
+	for name, got := range map[string]int{
+		"public":  publicErr.StatusCode,
+		"infra":   infraErr.StatusCode,
+		"weather": weatherErr.StatusCode,
+	} {
+		if diff := cmp.Diff(apiErr.StatusCode, got); diff != "" {
+			t.Fatalf("%s status mismatch (-want +got):\n%s", name, diff)
+		}
 	}
 
 	publicJSON, err := publicErr.Response.MarshalJSON()
@@ -213,8 +221,26 @@ func TestErrorConversionsStayAlignedBetweenSpecs(t *testing.T) {
 		t.Fatalf("marshal infra error response: %v", err)
 	}
 
+	weatherJSON, err := weatherErr.Response.MarshalJSON()
+	if err != nil {
+		t.Fatalf("marshal weather error response: %v", err)
+	}
+
 	if diff := cmp.Diff(string(publicJSON), string(infraJSON)); diff != "" {
-		t.Fatalf("json mismatch (-want +got):\n%s", diff)
+		t.Fatalf("public/infra json mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(string(publicJSON), string(weatherJSON)); diff != "" {
+		t.Fatalf("public/weather json mismatch (-want +got):\n%s", diff)
+	}
+
+	for name, value := range map[string]string{
+		"public":  publicErr.XRequestID.Value,
+		"infra":   infraErr.XRequestID.Value,
+		"weather": weatherErr.XRequestID.Value,
+	} {
+		if diff := cmp.Diff(apiErr.RequestID, value); diff != "" {
+			t.Fatalf("%s request ID mismatch (-want +got):\n%s", name, diff)
+		}
 	}
 }
 
@@ -265,19 +291,11 @@ func (h publicExplicitErrorHandler) GetHealthz(context.Context) (publicoas.GetHe
 	return h.healthz, nil
 }
 
-func (h publicExplicitErrorHandler) GetCurrentWeather(context.Context, publicoas.GetCurrentWeatherParams) (publicoas.GetCurrentWeatherRes, error) {
-	return &publicoas.CurrentWeatherResponseHeaders{Response: publicoas.CurrentWeatherResponse{}}, nil
-}
-
 func (h publicExplicitErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCodeWithHeaders {
-	return New(http.StatusInternalServerError, "internal_error", "internal server error").OASDefault()
+	return publicDefaultError(New(http.StatusInternalServerError, "internal_error", "internal server error"))
 }
 
 func (h publicErrorHandler) GetHealthz(context.Context) (publicoas.GetHealthzRes, error) {
-	return nil, h.err
-}
-
-func (h publicErrorHandler) GetCurrentWeather(context.Context, publicoas.GetCurrentWeatherParams) (publicoas.GetCurrentWeatherRes, error) {
 	return nil, h.err
 }
 
@@ -303,4 +321,101 @@ func (h infraErrorHandler) GetReadyz(context.Context) (*infraoas.ProbeResponseHe
 
 func (h infraErrorHandler) NewError(context.Context, error) *infraoas.DefaultErrorStatusCodeWithHeaders {
 	return h.err
+}
+
+func publicDefaultError(apiErr Error) *publicoas.DefaultErrorStatusCodeWithHeaders {
+	apiErr = apiErr.normalize()
+
+	response := &publicoas.DefaultErrorStatusCodeWithHeaders{
+		StatusCode: apiErr.StatusCode,
+		Response: publicoas.ErrorResponse{
+			Code:    apiErr.Code,
+			Message: apiErr.Message,
+		},
+	}
+	if apiErr.RequestID != "" {
+		response.XRequestID = publicoas.NewOptString(apiErr.RequestID)
+		response.Response.RequestId = publicoas.NewOptString(apiErr.RequestID)
+	}
+
+	return response
+}
+
+func publicTooManyRequestsError(apiErr Error, headers TooManyRequestsHeaders) *publicoas.TooManyRequestsErrorHeaders {
+	apiErr = apiErr.normalize()
+
+	response := &publicoas.TooManyRequestsErrorHeaders{
+		Response: publicoas.ErrorResponse{
+			Code:    apiErr.Code,
+			Message: apiErr.Message,
+		},
+	}
+	if apiErr.RequestID != "" {
+		response.XRequestID = publicoas.NewOptString(apiErr.RequestID)
+		response.Response.RequestId = publicoas.NewOptString(apiErr.RequestID)
+	}
+	if headers.RetryAfter != "" {
+		response.RetryAfter = publicoas.NewOptString(headers.RetryAfter)
+	}
+	if headers.RateLimit != "" {
+		response.Ratelimit = publicoas.NewOptString(headers.RateLimit)
+	}
+	if headers.RateLimitPolicy != "" {
+		response.RatelimitPolicy = publicoas.NewOptString(headers.RateLimitPolicy)
+	}
+
+	return response
+}
+
+func publicServiceUnavailableError(apiErr Error) *publicoas.ServiceUnavailableErrorHeaders {
+	apiErr = apiErr.normalize()
+
+	response := &publicoas.ServiceUnavailableErrorHeaders{
+		Response: publicoas.ErrorResponse{
+			Code:    apiErr.Code,
+			Message: apiErr.Message,
+		},
+	}
+	if apiErr.RequestID != "" {
+		response.XRequestID = publicoas.NewOptString(apiErr.RequestID)
+		response.Response.RequestId = publicoas.NewOptString(apiErr.RequestID)
+	}
+
+	return response
+}
+
+func infraDefaultError(apiErr Error) *infraoas.DefaultErrorStatusCodeWithHeaders {
+	apiErr = apiErr.normalize()
+
+	response := &infraoas.DefaultErrorStatusCodeWithHeaders{
+		StatusCode: apiErr.StatusCode,
+		Response: infraoas.ErrorResponse{
+			Code:    apiErr.Code,
+			Message: apiErr.Message,
+		},
+	}
+	if apiErr.RequestID != "" {
+		response.XRequestID = infraoas.NewOptString(apiErr.RequestID)
+		response.Response.RequestId = infraoas.NewOptString(apiErr.RequestID)
+	}
+
+	return response
+}
+
+func weatherDefaultError(apiErr Error) *weatheroas.DefaultErrorStatusCodeWithHeaders {
+	apiErr = apiErr.normalize()
+
+	response := &weatheroas.DefaultErrorStatusCodeWithHeaders{
+		StatusCode: apiErr.StatusCode,
+		Response: weatheroas.ErrorResponse{
+			Code:    apiErr.Code,
+			Message: apiErr.Message,
+		},
+	}
+	if apiErr.RequestID != "" {
+		response.XRequestID = weatheroas.NewOptString(apiErr.RequestID)
+		response.Response.RequestId = weatheroas.NewOptString(apiErr.RequestID)
+	}
+
+	return response
 }

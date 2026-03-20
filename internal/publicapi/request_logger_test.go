@@ -2,6 +2,7 @@ package publicapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
@@ -48,6 +50,9 @@ func TestRequestLoggerCanBeDisabledForPublicHandler(t *testing.T) {
 	}, Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{}, nil
+		}),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler returned error: %v", err)

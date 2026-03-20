@@ -33,6 +33,10 @@ func handlePublicOpenAPISpec(w http.ResponseWriter, _ *http.Request) {
 	writeOpenAPISpec(w, apiassets.PublicOpenAPISpecYAML())
 }
 
+func handleWeatherOpenAPISpec(w http.ResponseWriter, _ *http.Request) {
+	writeOpenAPISpec(w, apiassets.WeatherOpenAPISpecYAML())
+}
+
 func handleInfraOpenAPISpec(w http.ResponseWriter, _ *http.Request) {
 	writeOpenAPISpec(w, apiassets.InfraOpenAPISpecYAML())
 }

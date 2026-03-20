@@ -9,6 +9,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/middleware"
@@ -23,6 +24,9 @@ func TestRequestAuditOnlyWrapsPublicHandler(t *testing.T) {
 	publicHandler, err := publicapi.NewHandler(config.Config{Environment: "test"}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: auditStore,
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{}, nil
+		}),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler returned error: %v", err)
@@ -60,8 +64,8 @@ func TestRequestAuditOnlyWrapsPublicHandler(t *testing.T) {
 	if record.Server != "public" {
 		t.Fatalf("request audit server mismatch: want %q, got %q", "public", record.Server)
 	}
-	if record.Route != "getHealthz" {
-		t.Fatalf("request audit route mismatch: want %q, got %q", "getHealthz", record.Route)
+	if record.Route != "GetHealthz" {
+		t.Fatalf("request audit route mismatch: want %q, got %q", "GetHealthz", record.Route)
 	}
 	if record.Path != "/healthz" {
 		t.Fatalf("request audit path mismatch: want %q, got %q", "/healthz", record.Path)
@@ -80,6 +84,9 @@ func TestNewPublicHandlerRequiresAuditStoreWhenAuditEnabled(t *testing.T) {
 	}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: nil,
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{}, nil
+		}),
 	})
 	if err == nil {
 		t.Fatal("NewHandler returned nil error")
@@ -103,6 +110,9 @@ func TestNewPublicHandlerDisablesRequestAuditMiddleware(t *testing.T) {
 	}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: auditStore,
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{}, nil
+		}),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler returned error: %v", err)
@@ -133,6 +143,9 @@ func TestNewPublicHandlerAllowsNilAuditStoreWhenAuditDisabled(t *testing.T) {
 	}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: nil,
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{}, nil
+		}),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler returned error: %v", err)

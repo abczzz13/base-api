@@ -43,8 +43,8 @@ func TestOTELOperationAttributesAddsAttributesToSpan(t *testing.T) {
 		t.Fatalf("expected exactly one ended span, got %d", len(spans))
 	}
 
-	if got := spans[0].Name(); got != "GET getHealthz" {
-		t.Fatalf("span name mismatch: want %q, got %q", "GET getHealthz", got)
+	if got := spans[0].Name(); got != "GET GetHealthz" {
+		t.Fatalf("span name mismatch: want %q, got %q", "GET GetHealthz", got)
 	}
 
 	got := map[string]string{}
@@ -56,7 +56,6 @@ func TestOTELOperationAttributesAddsAttributesToSpan(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"api.operation.id":      "getHealthz",
 		"api.operation.name":    "GetHealthz",
 		"api.operation.summary": "Public health endpoint",
 	}

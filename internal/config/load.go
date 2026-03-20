@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/abczzz13/base-api/internal/logger"
-	"github.com/abczzz13/base-api/internal/publicroute"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 	"github.com/abczzz13/base-api/internal/valkey"
@@ -353,12 +352,6 @@ func (l loader) loadOTEL(cfg *Config, errList *[]error) {
 }
 
 func (l loader) loadWeather(cfg *Config, errList *[]error) {
-	if value, ok, err := l.resolveBool(keyWeatherEnabled); err != nil {
-		appendLoadError(errList, err)
-	} else if ok {
-		cfg.Weather.IntegrationEnabled = value
-	}
-
 	if value, ok, err := l.resolveString(keyWeatherGeocodingBaseURL); err != nil {
 		appendLoadError(errList, err)
 	} else if ok {
@@ -487,20 +480,18 @@ func validateConfig(cfg Config, errList *[]error) {
 
 	appendLoadError(errList, validateAddress(keyAPIAddr, cfg.Address))
 	appendLoadError(errList, validateAddress(keyAPIInfraAddr, cfg.InfraAddress))
-	if cfg.Weather.Enabled() {
-		appendLoadError(errList, validateOptionalBaseURL(keyWeatherGeocodingBaseURL, cfg.Weather.GeocodingBaseURL))
-		appendLoadError(errList, validateOptionalBaseURL(keyWeatherForecastBaseURL, cfg.Weather.ForecastBaseURL))
+	appendLoadError(errList, validateOptionalBaseURL(keyWeatherGeocodingBaseURL, cfg.Weather.GeocodingBaseURL))
+	appendLoadError(errList, validateOptionalBaseURL(keyWeatherForecastBaseURL, cfg.Weather.ForecastBaseURL))
 
-		weatherGeocodingConfigured := strings.TrimSpace(cfg.Weather.GeocodingBaseURL) != ""
-		weatherForecastConfigured := strings.TrimSpace(cfg.Weather.ForecastBaseURL) != ""
+	weatherGeocodingConfigured := strings.TrimSpace(cfg.Weather.GeocodingBaseURL) != ""
+	weatherForecastConfigured := strings.TrimSpace(cfg.Weather.ForecastBaseURL) != ""
 
-		if weatherGeocodingConfigured != weatherForecastConfigured {
-			appendLoadError(errList, fmt.Errorf(
-				"invalid weather integration configuration: %s and %s must be configured together",
-				keyWeatherGeocodingBaseURL,
-				keyWeatherForecastBaseURL,
-			))
-		}
+	if weatherGeocodingConfigured != weatherForecastConfigured {
+		appendLoadError(errList, fmt.Errorf(
+			"invalid weather integration configuration: %s and %s must be configured together",
+			keyWeatherGeocodingBaseURL,
+			keyWeatherForecastBaseURL,
+		))
 	}
 
 	if cfg.DB.MinConns > cfg.DB.MaxConns {
@@ -553,8 +544,8 @@ func parseRateLimitRouteOverrides(raw string) (map[string]ratelimit.RouteOverrid
 	}
 
 	for route, override := range routeOverrides {
-		if !publicroute.IsKnownOperationID(route) {
-			return nil, fmt.Errorf("unknown public operation ID %q (known: %s)", route, strings.Join(publicroute.KnownOperationIDs(), ", "))
+		if !isKnownPublicOperationName(route) {
+			return nil, fmt.Errorf("unknown public operation name %q (known: %s)", route, strings.Join(knownPublicOperationNamesList(), ", "))
 		}
 		if err := override.Validate(); err != nil {
 			return nil, fmt.Errorf("route %q: %w", route, err)

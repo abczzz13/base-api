@@ -13,10 +13,11 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/abczzz13/base-api/internal/logger"
-	"github.com/abczzz13/base-api/internal/publicroute"
+	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/telemetry"
 	"github.com/abczzz13/base-api/internal/valkey"
+	"github.com/abczzz13/base-api/internal/weatheroas"
 )
 
 func TestLoad(t *testing.T) {
@@ -53,8 +54,7 @@ func TestLoad(t *testing.T) {
 				keyAPIValkeyMode:                  "cluster",
 				keyAPIValkeyAddrs:                 "valkey-1.internal:6379,valkey-2.internal:6379",
 				keyAPIRateLimitKeyPrefix:          "custom:rl",
-				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":3.5,"burst":7},"getHealthz":{"disabled":true}}`,
-				keyWeatherEnabled:                 "true",
+				keyAPIRateLimitRouteOverridesJSON: `{"GetCurrentWeather":{"requestsPerSecond":3.5,"burst":7},"GetHealthz":{"disabled":true}}`,
 				keyWeatherGeocodingBaseURL:        "https://geocoding-api.weather.example",
 				keyWeatherForecastBaseURL:         "https://forecast.weather.example",
 				keyWeatherAPIKey:                  "super-secret",
@@ -96,10 +96,9 @@ func TestLoad(t *testing.T) {
 				}
 				cfg.RateLimit.KeyPrefix = "custom:rl"
 				cfg.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
-					publicroute.OperationGetHealthz:        {Disabled: true},
-					publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(3.5), Burst: intPtr(7)},
+					publicoas.GetHealthzOperation:         {Disabled: true},
+					weatheroas.GetCurrentWeatherOperation: {RequestsPerSecond: float64Ptr(3.5), Burst: intPtr(7)},
 				}
-				cfg.Weather.IntegrationEnabled = true
 				cfg.Weather.GeocodingBaseURL = "https://geocoding-api.weather.example"
 				cfg.Weather.ForecastBaseURL = "https://forecast.weather.example"
 				cfg.Weather.APIKey = "super-secret"
@@ -169,28 +168,28 @@ func TestLoad(t *testing.T) {
 		{
 			name: "parses rate limit route overrides JSON",
 			env: map[string]string{
-				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":2.5},"getHealthz":{"burst":4}}`,
+				keyAPIRateLimitRouteOverridesJSON: `{"GetCurrentWeather":{"requestsPerSecond":2.5},"GetHealthz":{"burst":4}}`,
 			},
 			want: func() Config {
 				cfg := defaultConfig()
 				cfg.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
-					publicroute.OperationGetHealthz:        {Burst: intPtr(4)},
-					publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(2.5)},
+					publicoas.GetHealthzOperation:         {Burst: intPtr(4)},
+					weatheroas.GetCurrentWeatherOperation: {RequestsPerSecond: float64Ptr(2.5)},
 				}
 				return cfg
 			}(),
 		},
 		{
-			name: "ignores weather provider overrides when integration is disabled",
+			name: "parses weather provider overrides",
 			env: map[string]string{
-				keyWeatherGeocodingBaseURL: "weather.example/api",
-				keyWeatherForecastBaseURL:  "forecast.weather.example/v1",
+				keyWeatherGeocodingBaseURL: "https://weather.example",
+				keyWeatherForecastBaseURL:  "https://forecast.weather.example",
 				keyWeatherTimeout:          "7s",
 			},
 			want: func() Config {
 				cfg := defaultConfig()
-				cfg.Weather.GeocodingBaseURL = "weather.example/api"
-				cfg.Weather.ForecastBaseURL = "forecast.weather.example/v1"
+				cfg.Weather.GeocodingBaseURL = "https://weather.example"
+				cfg.Weather.ForecastBaseURL = "https://forecast.weather.example"
 				cfg.Weather.Timeout = 7 * time.Second
 				return cfg
 			}(),
@@ -378,7 +377,7 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 		{
 			name: "invalid rate limit route overrides json fails",
 			env: map[string]string{
-				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":`,
+				keyAPIRateLimitRouteOverridesJSON: `{"GetCurrentWeather":`,
 			},
 			wantContains: []string{"invalid API_RATE_LIMIT_ROUTE_OVERRIDES_JSON:"},
 		},
@@ -387,14 +386,14 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 			env: map[string]string{
 				keyAPIRateLimitRouteOverridesJSON: `{"unknownOperation":{"burst":2}}`,
 			},
-			wantContains: []string{"unknown public operation ID \"unknownOperation\""},
+			wantContains: []string{"unknown public operation name \"unknownOperation\""},
 		},
 		{
 			name: "invalid rate limit route override fails",
 			env: map[string]string{
-				keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"disabled":true,"burst":2}}`,
+				keyAPIRateLimitRouteOverridesJSON: `{"GetCurrentWeather":{"disabled":true,"burst":2}}`,
 			},
-			wantContains: []string{"route \"getCurrentWeather\": disabled overrides cannot set requestsPerSecond or burst"},
+			wantContains: []string{"route \"GetCurrentWeather\": disabled overrides cannot set requestsPerSecond or burst"},
 		},
 		{
 			name: "invalid CORS and CSRF origins fail",
@@ -473,16 +472,8 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 			wantContains: []string{"invalid API_VALKEY_MODE=\"sentinel\": unsupported mode \"sentinel\""},
 		},
 		{
-			name: "invalid weather enabled boolean fails",
-			env: map[string]string{
-				keyWeatherEnabled: "sure",
-			},
-			wantContains: []string{"invalid boolean for WEATHER_ENABLED=\"sure\""},
-		},
-		{
 			name: "weather geocoding base URL must be absolute origin",
 			env: map[string]string{
-				keyWeatherEnabled:          "true",
 				keyWeatherGeocodingBaseURL: "weather.example/api",
 				keyWeatherForecastBaseURL:  "https://forecast.weather.example",
 			},
@@ -491,7 +482,6 @@ func TestLoadStrictValidationFailures(t *testing.T) {
 		{
 			name: "weather forecast base URL must be absolute origin",
 			env: map[string]string{
-				keyWeatherEnabled:          "true",
 				keyWeatherGeocodingBaseURL: "https://geocoding-api.weather.example",
 				keyWeatherForecastBaseURL:  "forecast.weather.example/v1",
 			},
@@ -632,8 +622,7 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 		keyAPIValkeyMode:                  "standalone",
 		keyAPIValkeyAddrs:                 "127.0.0.1:6379",
 		keyAPIRateLimitKeyPrefix:          "file:rl",
-		keyAPIRateLimitRouteOverridesJSON: `{"getCurrentWeather":{"requestsPerSecond":2.5,"burst":4}}`,
-		keyWeatherEnabled:                 "true",
+		keyAPIRateLimitRouteOverridesJSON: `{"GetCurrentWeather":{"requestsPerSecond":2.5,"burst":4}}`,
 		keyWeatherGeocodingBaseURL:        "https://geocoding-api.weather.example",
 		keyWeatherForecastBaseURL:         "https://forecast.weather.example",
 		keyWeatherAPIKey:                  "weather-secret",
@@ -708,10 +697,9 @@ func TestLoadSupportsFileBackedValuesForAllKeys(t *testing.T) {
 	}
 	want.RateLimit.KeyPrefix = "file:rl"
 	want.RateLimit.RouteOverrides = map[string]ratelimit.RouteOverride{
-		publicroute.OperationGetHealthz:        {Disabled: true},
-		publicroute.OperationGetCurrentWeather: {RequestsPerSecond: float64Ptr(2.5), Burst: intPtr(4)},
+		publicoas.GetHealthzOperation:         {Disabled: true},
+		weatheroas.GetCurrentWeatherOperation: {RequestsPerSecond: float64Ptr(2.5), Burst: intPtr(4)},
 	}
-	want.Weather.IntegrationEnabled = true
 	want.Weather.GeocodingBaseURL = "https://geocoding-api.weather.example"
 	want.Weather.ForecastBaseURL = "https://forecast.weather.example"
 	want.Weather.APIKey = "weather-secret"

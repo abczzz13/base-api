@@ -135,7 +135,7 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 				Burst:             11,
 			},
 			RouteOverrides: map[string]ratelimit.RouteOverride{
-				"getHealthz": {Disabled: true},
+				"GetHealthz": {Disabled: true},
 			},
 		},
 		OTEL: config.OTELConfig{
@@ -144,11 +144,10 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 			TracesSamplerArg: &samplerArg,
 		},
 		Weather: config.WeatherConfig{
-			IntegrationEnabled: true,
-			GeocodingBaseURL:   "https://geocoding-api.open-meteo.com",
-			ForecastBaseURL:    "https://api.open-meteo.com",
-			APIKey:             "super-secret",
-			Timeout:            4 * time.Second,
+			GeocodingBaseURL: "https://geocoding-api.open-meteo.com",
+			ForecastBaseURL:  "https://api.open-meteo.com",
+			APIKey:           "super-secret",
+			Timeout:          4 * time.Second,
 		},
 		DB: config.DBConfig{
 			URL:                   "postgres://db.example/base_api",
@@ -184,7 +183,6 @@ func TestLogStartupConfigurationRecordsSafeSummary(t *testing.T) {
 		"valkey_addrs_count":                  float64(2),
 		"rate_limit_route_overrides_count":    float64(1),
 		"request_audit_enabled":               true,
-		"weather_enabled":                     true,
 		"client_ip_security_mode":             "strict",
 		"client_ip_priority":                  "x_forwarded_for,remote_addr",
 		"client_ip_trusted_proxy_source":      "configured",
@@ -229,7 +227,7 @@ func TestSetupRateLimiterReturnsUnavailableStoreWhenFailOpen(t *testing.T) {
 		t.Fatal("expected nil valkey pinger in fail-open mode")
 	}
 
-	_, err = store.Allow(context.Background(), "public:getHealthz:192.0.2.10", ratelimit.Policy{RequestsPerSecond: 1, Burst: 1})
+	_, err = store.Allow(context.Background(), "public:GetHealthz:192.0.2.10", ratelimit.Policy{RequestsPerSecond: 1, Burst: 1})
 	if !errors.Is(err, ratelimit.ErrStartupBackendUnavailable) {
 		t.Fatalf("Allow error mismatch: want wrapped ErrStartupBackendUnavailable, got %v", err)
 	}

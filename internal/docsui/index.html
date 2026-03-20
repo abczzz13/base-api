@@ -20,15 +20,17 @@
     window.addEventListener("load", function() {
       const infraSpecURL = new URL("./openapi/infra.yaml", window.location.href).toString();
       const publicSpecURL = new URL("./openapi/public.yaml", window.location.href).toString();
+      const weatherSpecURL = new URL("./openapi/weather.yaml", window.location.href).toString();
 
       window.ui = SwaggerUIBundle({
         dom_id: "#swagger-ui",
         deepLinking: true,
         urls: [
-          { url: publicSpecURL, name: "Public API" },
+          { url: publicSpecURL, name: "Public Core API" },
+          { url: weatherSpecURL, name: "Public Weather API" },
           { url: infraSpecURL, name: "Infra API" }
         ],
-        "urls.primaryName": "Public API",
+        "urls.primaryName": "Public Core API",
         presets: [
           SwaggerUIBundle.presets.apis,
           SwaggerUIStandalonePreset

@@ -1,0 +1,120 @@
+openapi: 3.0.3
+info:
+  title: Base API Weather
+  version: 0.1.0
+paths:
+  /weather/current:
+    x-ogen-operation-group: Weather
+    get:
+      operationId: getCurrentWeather
+      summary: Current weather for a location
+      parameters:
+        - in: query
+          name: location
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: Current weather conditions
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentWeatherResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        default:
+          $ref: "#/components/responses/DefaultError"
+components:
+  headers:
+    RequestId:
+      description: Request ID used to correlate logs, errors, and audit records.
+      schema:
+        type: string
+    RetryAfter:
+      description: Number of seconds the client should wait before retrying.
+      schema:
+        type: string
+    Ratelimit:
+      description: Structured field describing the remaining request quota and reset delay for the applied rate limit policy.
+      schema:
+        type: string
+    Ratelimit-Policy:
+      description: Structured field describing the advertised request quota policy for the applied rate limit.
+      schema:
+        type: string
+  responses:
+    DefaultError:
+      description: Error response
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequestsError:
+      description: Request rejected because the client exceeded the configured rate limit.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        Ratelimit:
+          $ref: "#/components/headers/Ratelimit"
+        Ratelimit-Policy:
+          $ref: "#/components/headers/Ratelimit-Policy"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailableError:
+      description: Request could not be processed because a required backend dependency is unavailable.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    CurrentWeatherResponse:
+      type: object
+      required:
+        - provider
+        - location
+        - condition
+        - temperatureC
+        - observedAt
+      properties:
+        provider:
+          type: string
+        location:
+          type: string
+        condition:
+          type: string
+        temperatureC:
+          type: number
+          format: double
+        observedAt:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string

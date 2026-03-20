@@ -63,15 +63,10 @@ type ClientIPConfig struct {
 }
 
 type WeatherConfig struct {
-	IntegrationEnabled bool
-	GeocodingBaseURL   string
-	ForecastBaseURL    string
-	APIKey             string //nolint:gosec // Runtime config field stores a provider secret loaded from env or file.
-	Timeout            time.Duration
-}
-
-func (c WeatherConfig) Enabled() bool {
-	return c.IntegrationEnabled
+	GeocodingBaseURL string
+	ForecastBaseURL  string
+	APIKey           string //nolint:gosec // Runtime config field stores a provider secret loaded from env or file.
+	Timeout          time.Duration
 }
 
 type RateLimitConfig struct {

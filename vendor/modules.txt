@@ -95,8 +95,8 @@ github.com/mfridman/interpolate
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/ogen-go/ogen v1.18.0
-## explicit; go 1.24.0
+# github.com/ogen-go/ogen v1.20.1
+## explicit; go 1.25.0
 github.com/ogen-go/ogen/conv
 github.com/ogen-go/ogen/http
 github.com/ogen-go/ogen/internal/httpcookie

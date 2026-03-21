@@ -19,7 +19,7 @@ The goal is to give new services a clean, idiomatic starting point with strong d
 - Strict env-based configuration with `<KEY>_FILE` support
 - Request IDs propagated through logs, errors, and audit records
 - Request and outbound HTTP audit persistence in PostgreSQL
-- An opt-in outbound weather integration example built on `internal/outboundhttp`
+- An outbound weather integration example built on `internal/httpclient`
 - Reproducible code generation checks for `ogen` and `sqlc`
 - Distroless container image and hardened compose setup
 - Split GitHub Actions workflows for CI, security, image delivery, and manual deployment
@@ -31,13 +31,14 @@ The runtime is intentionally small at the entrypoint and explicit at the composi
 - `cmd/api`: process entrypoint
 - `internal/server`: application composition root and lifecycle
 - `internal/config`: config loading and validation
-- `internal/publicapi`: public HTTP transport wiring
+- `internal/publicapi`: public HTTP transport wiring, shared middleware, and mounted public handlers
 - `internal/infraapi`: infra HTTP transport wiring
-- `internal/publicoas` and `internal/infraoas`: generated OpenAPI server code
+- `internal/publicoas`, `internal/weatheroas`, and `internal/infraoas`: generated OpenAPI server code
+
 - `internal/postgres`: database runtime setup, migrations, and metrics
 - `internal/requestaudit` and `internal/outboundaudit`: audit persistence
-- `internal/outboundhttp`: reusable instrumented outbound HTTP client
-- `internal/weather`: example typed outbound integration
+- `internal/httpclient`: reusable instrumented outbound HTTP client
+- `internal/clients/weather`: example typed outbound integration client
 
 Request flow is:
 
@@ -47,8 +48,8 @@ Request flow is:
 4. errors are encoded to a shared schema and include `requestId`
 5. request metadata is correlated in logs, traces, and audit records
 
-The template includes one concrete outbound example: `GET /weather/current?location=...`, backed by Open-Meteo geocoding and forecast APIs.
-When `WEATHER_ENABLED=true`, it calls a fixed-origin upstream through the shared outbound HTTP client, emitting outbound metrics and audit records automatically.
+The template includes one concrete outbound example API: `GET /weather/current?location=...`, backed by Open-Meteo geocoding and forecast APIs.
+The weather endpoint is part of the standard public surface and is served from its own OpenAPI spec and generated package while still sharing the main public HTTP entrypoint, middleware chain, outbound metrics, and audit records.
 
 ## Quickstart
 
@@ -86,18 +87,18 @@ If you use Nushell, `nix-direnv` is usually the smoothest option because it keep
 Useful endpoints after startup:
 
 - Public API: `http://127.0.0.1:8080/healthz`
-- Public weather example (after setting `WEATHER_ENABLED=true`): `http://127.0.0.1:8080/weather/current?location=Amsterdam`
+- Public weather example: `http://127.0.0.1:8080/weather/current?location=Amsterdam`
 - Infra liveness: `http://127.0.0.1:9090/livez`
 - Infra readiness: `http://127.0.0.1:9090/readyz`
 - Infra metrics: `http://127.0.0.1:9090/metrics`
 - Swagger UI: `http://127.0.0.1:9090/docs`
+- Swagger specs: `http://127.0.0.1:9090/openapi/public.yaml`, `http://127.0.0.1:9090/openapi/weather.yaml`, `http://127.0.0.1:9090/openapi/infra.yaml`
 
 Run directly on the host instead of compose:
 
 ```bash
 nix develop
 cp .env.example .env
-# Edit .env and set WEATHER_ENABLED=true to enable the example endpoint.
 just db-start
 just run
 ```
@@ -120,8 +121,8 @@ just ogen-generate
 
 ## Automation
 
-- `CI` runs repository checks inside the pinned Nix dev shell plus container build validation on pull requests, `main`, and manual dispatches.
-- `Security` runs repository security checks inside the pinned Nix dev shell, optionally runs GitHub dependency review when the `ENABLE_DEPENDENCY_REVIEW` repository variable is set to `true`, runs Trivy config scanning, uploads Trivy SARIF into GitHub code scanning, and runs CodeQL on pull requests, `main`, a weekly schedule, and manual dispatches.
+- `CI` runs repository checks inside the pinned Nix dev shell, enforces the race detector and coverage gate, and smoke-tests the built runtime image on pull requests, `main`, and manual dispatches.
+- `Security` runs repository security checks inside the pinned Nix dev shell, runs GitHub dependency review on pull requests, runs Trivy config scanning, uploads Trivy SARIF into GitHub code scanning, and runs CodeQL on pull requests, `main`, a weekly schedule, and manual dispatches.
 - `Release` runs on pushes to `main`, waits for successful `Lint`, `Test`, `Image Validation`, and `Security` runs for the same commit, then runs `go-semantic-release` to derive the next semver tag from Conventional Commits and create the GitHub Release. Configure the `RELEASE_TOKEN` secret so the generated `v*` tag can trigger downstream publish automation.
 - `Publish` builds and scans per-platform image archives before publishing multi-arch `ghcr.io/abczzz13/base-api` images for `main`, `v*` tags, and manual feature-branch preview publishes, signs images with `cosign`, and emits deploy metadata.
 - `Deploy` is a manual `workflow_dispatch` workflow that promotes a successful `Publish` run to `test` or `production` after cross-checking the publish metadata against immutable GitHub run data. Successful published runs from `main`, manual feature-branch previews, and `v*` tags may deploy to `test`; only successful tag-push runs built from `v*` tags may deploy to `production`.
@@ -151,8 +152,9 @@ nix develop -c just check
 
 - Migrations live in `db/migrations`.
 - SQL queries live in `db/queries` and generate code into `internal/dbsqlc`.
-- OpenAPI specs live in `api/` and generate server code into `internal/publicoas` and `internal/infraoas`.
-- The weather example is opt-in via `WEATHER_ENABLED=true`, uses Open-Meteo by default, and can be pointed at other origins with `WEATHER_GEOCODING_BASE_URL` and `WEATHER_FORECAST_BASE_URL`.
+- OpenAPI specs live in `api/` and generate server code into `internal/publicoas`, `internal/weatheroas`, and `internal/infraoas`.
+- The public API is split across `public.yaml` for core endpoints and `weather.yaml` for the weather endpoint.
+- The weather endpoint uses Open-Meteo by default and can be pointed at other origins with `WEATHER_GEOCODING_BASE_URL` and `WEATHER_FORECAST_BASE_URL`.
 - Every package should keep a `doc.go` package comment.
 
 ## Project Docs

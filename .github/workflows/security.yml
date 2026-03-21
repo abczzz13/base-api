@@ -32,7 +32,7 @@ jobs:
 
   dependency_review:
     name: Security / Dependency Review
-    if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -51,6 +51,8 @@ jobs:
       - name: Verify / Review dependency changes
         id: dependency_review
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          config-file: ./.github/dependency-review-config.yml
 
       - name: Report / Publish results
         if: always()
@@ -71,7 +73,7 @@ jobs:
     with:
       title: Security / Trivy Config Scan
       scan_ref: .
-      skip_dirs: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,build,.direnv
+      skip_dirs: vendor,internal/dbsqlc,internal/publicoas,internal/infraoas,internal/weatheroas,build,.direnv
       severity: HIGH,CRITICAL
       sarif_file: artifacts/trivy-config.sarif
       gate_file: artifacts/trivy-config.txt

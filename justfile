@@ -20,10 +20,11 @@ ogen := "ogen"
 db_migrations_dir := "db/migrations"
 sqlc_config := "sqlc.yaml"
 db_url_default := "postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=disable"
+coverage_min_percent := "70.0"
 docker_compose := "docker compose --env-file .env"
 go_api_package := "./cmd/api"
 go_mod_mode := "-mod=vendor"
-yaml_paths := "api/openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows .github/actions"
+yaml_paths := "api/openapi.yaml api/weather_openapi.yaml api/infra_openapi.yaml compose.yaml .ogen.yml .github/workflows .github/actions"
 nix_paths := "flake.nix"
 version := `git describe --tags --always --dirty 2>/dev/null || echo 'dev'`
 git_branch := `git branch --show-current 2>/dev/null || echo 'unknown'`
@@ -169,7 +170,7 @@ sqlc-generate:
 
 [script]
 ogen-generate:
-    go generate {{go_mod_mode}} ./internal/publicoas ./internal/infraoas
+	go generate {{go_mod_mode}} ./internal/publicoas ./internal/weatheroas ./internal/infraoas
 
 [script]
 sqlc-check:
@@ -189,16 +190,16 @@ sqlc-check:
 
 [script]
 ogen-check:
-    before="$(git status --porcelain -- internal/publicoas internal/infraoas)"
-    go generate {{go_mod_mode}} ./internal/publicoas ./internal/infraoas
-    after="$(git status --porcelain -- internal/publicoas internal/infraoas)"
+	before="$(git status --porcelain -- internal/publicoas internal/weatheroas internal/infraoas)"
+	go generate {{go_mod_mode}} ./internal/publicoas ./internal/weatheroas ./internal/infraoas
+	after="$(git status --porcelain -- internal/publicoas internal/weatheroas internal/infraoas)"
 
-    if [ "$before" != "$after" ]; then
-        printf 'ogen generated code is out of date. Run: just ogen-generate\n'
-        printf 'Status before:\n%s\n' "${before:-<clean>}"
-        printf 'Status after:\n%s\n' "${after:-<clean>}"
-        exit 1
-    fi
+	if [ "$before" != "$after" ]; then
+		printf 'ogen generated code is out of date. Run: just ogen-generate\n'
+		printf 'Status before:\n%s\n' "${before:-<clean>}"
+		printf 'Status after:\n%s\n' "${after:-<clean>}"
+		exit 1
+	fi
 
 [script]
 check-tools:
@@ -412,7 +413,7 @@ coverage:
     packages=()
     while IFS= read -r pkg; do
         case "$pkg" in
-            */internal/publicoas|*/internal/publicoas/*|*/internal/infraoas|*/internal/infraoas/*)
+            */internal/publicoas|*/internal/publicoas/*|*/internal/weatheroas|*/internal/weatheroas/*|*/internal/infraoas|*/internal/infraoas/*)
                 continue
                 ;;
         esac
@@ -421,6 +422,20 @@ coverage:
 
     go test {{go_mod_mode}} -coverprofile=coverage.out "${packages[@]}"
     go tool cover -func=coverage.out
+
+[script]
+coverage-enforce profile="coverage.out" min=coverage_min_percent:
+    profile_path="{{profile}}"
+    min_percent="{{min}}"
+
+    if [ ! -f "$profile_path" ]; then
+        printf 'coverage profile %s not found\n' "$profile_path"
+        exit 1
+    fi
+
+    total_percent="$(go tool cover -func="$profile_path" | python3 -c 'import sys; lines = sys.stdin.read().splitlines(); matches = [line.split()[-1].rstrip("%") for line in lines if line.startswith("total:")]; print(matches[0] if matches else (_ for _ in ()).throw(SystemExit("missing total coverage line")))')"
+
+    python3 -c 'import sys; total = float(sys.argv[1]); minimum = float(sys.argv[2]); print(f"coverage gate passed: {total:.1f}% >= {minimum:.1f}%") if total >= minimum else (_ for _ in ()).throw(SystemExit(f"coverage {total:.1f}% is below required minimum {minimum:.1f}%"))' "$total_percent" "$min_percent"
 
 coverage-all:
     go test {{go_mod_mode}} -coverprofile=coverage-all.out ./...
@@ -502,6 +517,57 @@ ci-lint: fmt-go-check fmt-nix-check lint sqlc-check ogen-check vendor-check flak
 
 ci-test: test
 
+ci-race: race
+
+ci-coverage: coverage coverage-enforce
+
 ci-image-validate: build-image-ci
+
+[script]
+ci-image-smoke:
+    image_ref="${IMAGE_SMOKE_IMAGE:-base-api:ci}"
+    db_url="${DB_URL:-{{db_url_default}}}"
+    container_db_url="${db_url//127.0.0.1/host.docker.internal}"
+    container_db_url="${container_db_url//localhost/host.docker.internal}"
+    container_name="base-api-ci-smoke"
+
+    cleanup() {
+        docker rm -f "$container_name" >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT
+    cleanup
+
+    docker run -d \
+        --name "$container_name" \
+        --add-host=host.docker.internal:host-gateway \
+        -p 18080:8080 \
+        -p 19090:9090 \
+        -e DB_URL="$container_db_url" \
+        -e API_ADDR="0.0.0.0:8080" \
+        -e API_INFRA_ADDR="0.0.0.0:9090" \
+        -e API_ENVIRONMENT="test" \
+        "$image_ref" >/dev/null
+
+    for url in \
+        http://127.0.0.1:18080/healthz \
+        http://127.0.0.1:19090/livez \
+        http://127.0.0.1:19090/readyz \
+        http://127.0.0.1:19090/metrics
+    do
+        success=0
+        for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error "$url" >/dev/null; then
+                success=1
+                break
+            fi
+            sleep 1
+        done
+
+        if [ "$success" -ne 1 ]; then
+            printf 'image smoke check failed for %s\n' "$url"
+            docker logs "$container_name"
+            exit 1
+        fi
+    done
 
 ci-security: security

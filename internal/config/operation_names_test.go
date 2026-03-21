@@ -1,0 +1,21 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/weatheroas"
+)
+
+func TestKnownPublicOperationNamesMatchesGeneratedOperations(t *testing.T) {
+	wantOperations := map[string]struct{}{
+		publicoas.GetHealthzOperation:         {},
+		weatheroas.GetCurrentWeatherOperation: {},
+	}
+
+	if diff := cmp.Diff(wantOperations, knownPublicOperationNames); diff != "" {
+		t.Fatalf("knownPublicOperationNames drift (-want +got):\n%s", diff)
+	}
+}

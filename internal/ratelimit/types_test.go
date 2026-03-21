@@ -115,34 +115,34 @@ func TestResolvePolicy(t *testing.T) {
 	}{
 		{
 			name:   "uses default policy when no override exists",
-			route:  "getHealthz",
+			route:  "GetHealthz",
 			want:   defaultPolicy,
 			wantOK: true,
 		},
 		{
 			name: "disables route when override is disabled",
 			overrides: map[string]RouteOverride{
-				"getHealthz": {Disabled: true},
+				"GetHealthz": {Disabled: true},
 			},
-			route:  "getHealthz",
+			route:  "GetHealthz",
 			want:   Policy{},
 			wantOK: false,
 		},
 		{
 			name: "overrides only provided fields",
 			overrides: map[string]RouteOverride{
-				"getHealthz": {RequestsPerSecond: float64Ptr(2.5)},
+				"GetHealthz": {RequestsPerSecond: float64Ptr(2.5)},
 			},
-			route:  "getHealthz",
+			route:  "GetHealthz",
 			want:   Policy{RequestsPerSecond: 2.5, Burst: 10},
 			wantOK: true,
 		},
 		{
 			name: "overrides both fields",
 			overrides: map[string]RouteOverride{
-				"getHealthz": {RequestsPerSecond: float64Ptr(2.5), Burst: intPtr(4)},
+				"GetHealthz": {RequestsPerSecond: float64Ptr(2.5), Burst: intPtr(4)},
 			},
-			route:  "getHealthz",
+			route:  "GetHealthz",
 			want:   Policy{RequestsPerSecond: 2.5, Burst: 4},
 			wantOK: true,
 		},

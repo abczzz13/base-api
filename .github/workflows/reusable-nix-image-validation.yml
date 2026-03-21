@@ -13,6 +13,36 @@ on:
         required: false
         type: number
         default: 14
+      db_image:
+        description: PostgreSQL service image.
+        required: false
+        type: string
+        default: postgres:18-alpine
+      db_name:
+        description: Database name.
+        required: false
+        type: string
+        default: base_api
+      db_user:
+        description: Database user.
+        required: false
+        type: string
+        default: postgres
+      db_password:
+        description: Database password.
+        required: false
+        type: string
+        default: postgres
+      db_port:
+        description: Database port.
+        required: false
+        type: number
+        default: 5432
+      db_url:
+        description: Database URL for runtime validation.
+        required: false
+        type: string
+        default: postgres://postgres:postgres@127.0.0.1:5432/base_api?sslmode=disable
 
 defaults:
   run:
@@ -25,6 +55,20 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      security-events: write
+    env:
+      DB_URL: ${{ inputs.db_url }}
+    services:
+      postgres:
+        image: ${{ inputs.db_image }}
+        env:
+          POSTGRES_DB: ${{ inputs.db_name }}
+          POSTGRES_USER: ${{ inputs.db_user }}
+          POSTGRES_PASSWORD: ${{ inputs.db_password }}
+        ports:
+          - ${{ inputs.db_port }}:5432
+        options: >-
+          --health-cmd "pg_isready -U \"${{ inputs.db_user }}\" -d \"${{ inputs.db_name }}\"" --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - name: Prepare / Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -38,6 +82,50 @@ jobs:
           set -euo pipefail
           nix develop -c just ci-image-validate 2>&1 | tee artifacts/image-validation.log
 
+      - name: Prepare / Setup Trivy
+        uses: ./.github/actions/setup-trivy
+
+      - name: Verify / Generate Trivy SARIF
+        id: image_scan_sarif
+        uses: ./.github/actions/trivy-run
+        with:
+          scan-type: image
+          image-ref: base-api:ci
+          scanners: vuln
+          pkg-types: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: "true"
+          format: sarif
+          output: artifacts/trivy-image-validation.sarif
+          exit-code: "0"
+
+      - name: Report / Upload Trivy SARIF
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && hashFiles('artifacts/trivy-image-validation.sarif') != ''
+        uses: github/codeql-action/upload-sarif@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+        with:
+          sarif_file: artifacts/trivy-image-validation.sarif
+          category: trivy-image-linux-amd64
+
+      - name: Verify / Gate on Trivy findings
+        id: image_scan_gate
+        uses: ./.github/actions/trivy-run
+        with:
+          scan-type: image
+          image-ref: base-api:ci
+          scanners: vuln
+          pkg-types: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: "true"
+          format: table
+          output: artifacts/trivy-image-validation.txt
+          exit-code: "1"
+
+      - name: Verify / Smoke test runtime image
+        id: image_smoke
+        run: |
+          set -euo pipefail
+          nix develop -c just ci-image-smoke 2>&1 | tee artifacts/image-smoke.log
+
       - name: Report / Publish results
         if: always()
         uses: ./.github/actions/report-job
@@ -47,6 +135,9 @@ jobs:
             | Item | Result |
             | --- | --- |
             | Runtime image build | ${{ steps.image_validation.outcome }} |
+            | Trivy SARIF export | ${{ steps.image_scan_sarif.outcome }} |
+            | Trivy severity gate | ${{ steps.image_scan_gate.outcome }} |
+            | Runtime image smoke test | ${{ steps.image_smoke.outcome }} |
             | Artifacts | `${{ inputs.artifact_name }}` |
           artifact-name: ${{ inputs.artifact_name }}
           artifact-path: artifacts/

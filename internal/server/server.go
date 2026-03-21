@@ -10,9 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
-	"github.com/abczzz13/base-api/internal/httpclient"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
@@ -78,11 +76,11 @@ func Run(
 		return fmt.Errorf("configure metrics runtime: %w", err)
 	}
 
-	database, databaseShutdown, err := postgres.SetupRuntime(ctx, cfg.DB, metricsRuntime.registry)
+	database, shutdownDatabase, err := postgres.SetupRuntime(ctx, cfg.DB, metricsRuntime.registry)
 	if err != nil {
 		return fmt.Errorf("configure database: %w", err)
 	}
-	runtimeCleanup.Add(databaseShutdown)
+	runtimeCleanup.Add(shutdownDatabase)
 
 	var requestAuditRepository requestaudit.Repository
 	if cfg.RequestAudit.IsEnabled() {
@@ -105,17 +103,18 @@ func Run(
 		return err
 	}
 
-	weatherClient, err := setupWeatherClient(cfg, metricsRuntime.httpClient, outboundAuditRepository)
-	if err != nil {
-		return err
-	}
-
-	publicHandler, err := publicapi.NewHandler(cfg, publicapi.Dependencies{
+	publicDeps := publicapi.Dependencies{
 		RequestMetrics:         metricsRuntime.http,
 		RequestAuditRepository: requestAuditRepository,
 		RateLimiter:            rateLimiter,
-		WeatherClient:          weatherClient,
-	})
+	}
+	weatherClient, err := setupWeatherClient(cfg, metricsRuntime.httpClient, outboundAuditRepository)
+	if err != nil {
+		return fmt.Errorf("configure weather client: %w", err)
+	}
+	publicDeps.WeatherClient = weatherClient
+
+	publicHandler, err := publicapi.NewHandler(cfg, publicDeps)
 	if err != nil {
 		return fmt.Errorf("create public API handler: %w", err)
 	}
@@ -142,7 +141,7 @@ func Run(
 	}
 
 	if err := BindListeners(ctx, servers); err != nil {
-		return err
+		return fmt.Errorf("bind listeners: %w", err)
 	}
 
 	serverResults := RunServers(servers)
@@ -222,8 +221,6 @@ func logStartupConfiguration(ctx context.Context, cfg config.Config) {
 		attrs = append(attrs, slog.Float64("tracing_sampler_arg", *cfg.OTEL.TracesSamplerArg))
 	}
 
-	attrs = append(attrs, slog.Bool("weather_enabled", cfg.Weather.Enabled()))
-
 	slog.LogAttrs(ctx, slog.LevelInfo, "startup configuration", attrs...)
 }
 
@@ -284,37 +281,4 @@ func startupUnavailableRateLimiter(err error) ratelimit.Store {
 
 		return ratelimit.Decision{}, fmt.Errorf("%w: %w", ratelimit.ErrStartupBackendUnavailable, err)
 	})
-}
-
-func setupWeatherClient(cfg config.Config, httpMetrics *httpclient.Metrics, auditRepo outboundaudit.Repository) (weather.Client, error) {
-	if !cfg.Weather.Enabled() {
-		return nil, nil
-	}
-
-	geocodingClient, err := httpclient.New(httpclient.Config{
-		Client:          "open_meteo_geocoding",
-		BaseURL:         cfg.Weather.GeocodingBaseURL,
-		Metrics:         httpMetrics,
-		AuditRepository: auditRepo,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create weather geocoding client: %w", err)
-	}
-
-	forecastClient, err := httpclient.New(httpclient.Config{
-		Client:          "open_meteo_forecast",
-		BaseURL:         cfg.Weather.ForecastBaseURL,
-		Metrics:         httpMetrics,
-		AuditRepository: auditRepo,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create weather forecast client: %w", err)
-	}
-
-	weatherClient, err := weather.New(geocodingClient, forecastClient, cfg.Weather.APIKey, cfg.Weather.Timeout)
-	if err != nil {
-		return nil, fmt.Errorf("configure weather integration: %w", err)
-	}
-
-	return weatherClient, nil
 }

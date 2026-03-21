@@ -2,6 +2,7 @@ package infraapi
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	geninfra "github.com/abczzz13/base-api/internal/infraoas"
@@ -17,6 +18,13 @@ const (
 )
 
 func requestMetricsRouteLabeler(api *geninfra.Server) func(*http.Request) string {
+	ogenLabeler := middleware.OperationLabeler(middleware.OperationFinderFunc(func(method string, u *url.URL) (string, bool) {
+		if route, ok := api.FindPath(method, u); ok {
+			return route.Name(), true
+		}
+		return "", false
+	}))
+
 	return func(r *http.Request) string {
 		if r == nil || r.URL == nil {
 			return middleware.RequestMetricsRouteUnmatched
@@ -36,14 +44,6 @@ func requestMetricsRouteLabeler(api *geninfra.Server) func(*http.Request) string
 			return routeOpenAPISpec
 		}
 
-		if api != nil {
-			if route, ok := api.FindPath(r.Method, r.URL); ok {
-				if operationID := strings.TrimSpace(route.OperationID()); operationID != "" {
-					return operationID
-				}
-			}
-		}
-
-		return middleware.RequestMetricsRouteUnmatched
+		return ogenLabeler(r)
 	}
 }

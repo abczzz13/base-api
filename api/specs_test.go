@@ -15,6 +15,10 @@ func TestOpenAPISpecYAMLGettersReturnCopies(t *testing.T) {
 			get:  PublicOpenAPISpecYAML,
 		},
 		{
+			name: "weather spec",
+			get:  WeatherOpenAPISpecYAML,
+		},
+		{
 			name: "infra spec",
 			get:  InfraOpenAPISpecYAML,
 		},

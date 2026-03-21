@@ -50,6 +50,20 @@ func TestRegisterServesDocumentationEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name:       "weather spec is available as yaml",
+			method:     http.MethodGet,
+			path:       weatherOpenAPISpecPath,
+			wantStatus: http.StatusOK,
+			wantHeaders: map[string]string{
+				"Cache-Control": openAPISpecCacheTTL,
+			},
+			wantContentTypeContains: []string{"application/yaml"},
+			wantBodyContains: []string{
+				"openapi: 3.0.3",
+				"title: Base API Weather",
+			},
+		},
+		{
 			name:       "infra spec responds to HEAD",
 			method:     http.MethodHead,
 			path:       infraOpenAPISpecPath,
@@ -63,6 +77,16 @@ func TestRegisterServesDocumentationEndpoints(t *testing.T) {
 			name:       "public spec responds to HEAD",
 			method:     http.MethodHead,
 			path:       publicOpenAPISpecPath,
+			wantStatus: http.StatusOK,
+			wantHeaders: map[string]string{
+				"Cache-Control": openAPISpecCacheTTL,
+			},
+			wantContentTypeContains: []string{"application/yaml"},
+		},
+		{
+			name:       "weather spec responds to HEAD",
+			method:     http.MethodHead,
+			path:       weatherOpenAPISpecPath,
 			wantStatus: http.StatusOK,
 			wantHeaders: map[string]string{
 				"Cache-Control": openAPISpecCacheTTL,
@@ -86,7 +110,9 @@ func TestRegisterServesDocumentationEndpoints(t *testing.T) {
 				"/swagger-ui/swagger-ui-standalone-preset.js",
 				"./openapi/infra.yaml",
 				"./openapi/public.yaml",
-				"\"urls.primaryName\": \"Public API\"",
+				"./openapi/weather.yaml",
+				"Public Weather API",
+				"\"urls.primaryName\": \"Public Core API\"",
 			},
 			wantBodyNotEmpty: true,
 		},

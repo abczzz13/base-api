@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/abczzz13/base-api/internal/httpclient"
 )
+
+const maxResponseBodyBytes = 1 << 20 // 1 MiB
 
 const (
 	providerName        = "open-meteo"
@@ -97,6 +100,7 @@ func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("weather location %q not found", e.Location)
 }
 
+// Service implements Client using the Open-Meteo geocoding and forecast APIs.
 type Service struct {
 	geocodingClient *httpclient.Service
 	forecastClient  *httpclient.Service
@@ -152,7 +156,6 @@ func (s *Service) GetCurrent(ctx context.Context, location string) (CurrentWeath
 		return CurrentWeather{}, errors.New("location is required")
 	}
 
-	ctx = contextOrBackground(ctx)
 	if s.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, s.timeout)
@@ -284,8 +287,8 @@ func (s *Service) lookupCurrentWeather(ctx context.Context, location resolvedLoc
 	}, nil
 }
 
-func (s *Service) setAPIKey(query mapSetter) {
-	if strings.TrimSpace(s.apiKey) == "" {
+func (s *Service) setAPIKey(query url.Values) {
+	if s.apiKey == "" {
 		return
 	}
 
@@ -293,20 +296,18 @@ func (s *Service) setAPIKey(query mapSetter) {
 }
 
 func decodeAndDrainJSON(body io.Reader, target any) error {
-	decoder := json.NewDecoder(body)
+	limited := io.LimitReader(body, maxResponseBodyBytes)
+
+	decoder := json.NewDecoder(limited)
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
 
-	if _, err := io.Copy(io.Discard, body); err != nil {
+	if _, err := io.Copy(io.Discard, limited); err != nil {
 		return fmt.Errorf("drain response body: %w", err)
 	}
 
 	return nil
-}
-
-type mapSetter interface {
-	Set(key, value string)
 }
 
 func displayLocation(location resolvedLocation) string {
@@ -315,14 +316,6 @@ func displayLocation(location resolvedLocation) string {
 	}
 
 	return location.Name + ", " + location.Country
-}
-
-func contextOrBackground(ctx context.Context) context.Context {
-	if ctx == nil {
-		return context.Background()
-	}
-
-	return ctx
 }
 
 func weatherCodeDescription(code int) string {

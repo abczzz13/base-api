@@ -184,14 +184,14 @@ func TestSharedClientIPResolverCachesResolutionAcrossMiddlewares(t *testing.T) {
 		ClientIPResolver: resolver,
 		Store:            store,
 		Server:           "public",
-		RouteLabel:       func(*http.Request) string { return "getHealthz" },
+		RouteLabel:       func(*http.Request) string { return "GetHealthz" },
 	})(RateLimit(RateLimitConfig{
 		ClientIPResolver: resolver,
 		Store: ratelimit.StoreFunc(func(context.Context, string, ratelimit.Policy) (ratelimit.Decision, error) {
 			return ratelimit.Decision{Allowed: true}, nil
 		}),
 		Server:        "public",
-		RouteLabel:    func(*http.Request) string { return "getHealthz" },
+		RouteLabel:    func(*http.Request) string { return "GetHealthz" },
 		DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

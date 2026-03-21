@@ -145,7 +145,7 @@ func TestNewInfraHandlerWiresDocumentationRoutes(t *testing.T) {
 				"Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
 			},
 			wantBodyContains: []string{
-				"\"urls.primaryName\": \"Public API\"",
+				"\"urls.primaryName\": \"Public Core API\"",
 			},
 		},
 		{

@@ -15,10 +15,7 @@ func OTELOperationAttributes() ogenmiddleware.Middleware {
 					span.SetName(spanName)
 				}
 
-				attrs := make([]attribute.KeyValue, 0, 3)
-				if req.OperationID != "" {
-					attrs = append(attrs, attribute.String("api.operation.id", req.OperationID))
-				}
+				attrs := make([]attribute.KeyValue, 0, 2)
 				if req.OperationName != "" {
 					attrs = append(attrs, attribute.String("api.operation.name", req.OperationName))
 				}
@@ -36,9 +33,9 @@ func OTELOperationAttributes() ogenmiddleware.Middleware {
 }
 
 func operationSpanName(req ogenmiddleware.Request) string {
-	operation := req.OperationID
+	operation := req.OperationName
 	if operation == "" {
-		operation = req.OperationName
+		operation = req.OperationID
 	}
 
 	if operation == "" {

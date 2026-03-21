@@ -33,42 +33,34 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 
 	infraService := NewService(cfg, DefaultReadinessCheckers(deps.Database, deps.Valkey)...)
 
-	infraAPI, err := geninfra.NewServer(infraService, geninfra.WithErrorHandler(apierrors.OgenErrorHandler))
+	infraAPI, err := geninfra.NewServer(NewOASHandler(infraService), geninfra.WithErrorHandler(apierrors.OgenErrorHandler))
 	if err != nil {
 		return nil, err
 	}
 
-	appMux := http.NewServeMux()
-	docsui.Register(appMux)
-	appMux.Handle("/", infraAPI)
+	routeLabel := requestMetricsRouteLabeler(infraAPI)
 
 	middlewares := []func(http.Handler) http.Handler{
+		middleware.Recovery(),
 		middleware.RequestID(),
 		middleware.RequestMetrics(deps.RequestMetrics, middleware.RequestMetricsConfig{
 			Server:     "infra",
-			RouteLabel: requestMetricsRouteLabeler(infraAPI),
+			RouteLabel: routeLabel,
 		}),
 	}
 	if cfg.RequestLogger.IsEnabled() {
 		middlewares = append(middlewares, middleware.RequestLogger())
 	}
-	middlewares = append(middlewares, middleware.Recovery())
 
-	metricsMiddlewares := make([]func(http.Handler) http.Handler, 0, 3)
-	metricsMiddlewares = append(metricsMiddlewares, middleware.RequestID())
-	if cfg.RequestLogger.IsEnabled() {
-		metricsMiddlewares = append(metricsMiddlewares, middleware.RequestLogger())
-	}
-	metricsMiddlewares = append(metricsMiddlewares, middleware.Recovery())
-
-	metricsHandler := middleware.NewChain(metricsMiddlewares...).WrapHandler(promhttp.HandlerFor(
+	metricsHandler := promhttp.HandlerFor(
 		deps.MetricsGatherer,
 		promhttp.HandlerOpts{EnableOpenMetrics: true},
-	))
+	)
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", metricsHandler)
-	mux.Handle("/", middleware.NewChain(middlewares...).WrapHandler(appMux))
+	docsui.Register(mux)
+	mux.Handle("/", infraAPI)
 
-	return mux, nil
+	return middleware.NewChain(middlewares...).WrapHandler(mux), nil
 }

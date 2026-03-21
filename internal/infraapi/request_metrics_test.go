@@ -1,6 +1,7 @@
 package infraapi_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/abczzz13/base-api/internal/clients/weather"
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/middleware"
@@ -26,6 +28,9 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 	publicHandler, err := publicapi.NewHandler(config.Config{Environment: "test"}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{}, nil
+		}),
 	})
 	if err != nil {
 		t.Fatalf("new public handler returned error: %v", err)
@@ -47,7 +52,7 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name:       "public operation uses operation id route label",
+			name:       "public operation uses operation name route label",
 			handler:    publicHandler,
 			method:     http.MethodGet,
 			path:       "/healthz",
@@ -61,7 +66,7 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:       "infra operation uses operation id route label",
+			name:       "infra operation uses operation name route label",
 			handler:    infraHandler,
 			method:     http.MethodGet,
 			path:       "/livez",
@@ -75,7 +80,7 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "infra metrics endpoint bypasses request metrics middleware",
+			name:       "infra metrics endpoint uses dedicated route label",
 			handler:    infraHandler,
 			method:     http.MethodGet,
 			path:       "/metrics",
@@ -109,7 +114,7 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 		{
 			"server":      "public",
 			"method":      http.MethodGet,
-			"route":       "getHealthz",
+			"route":       "GetHealthz",
 			"status_code": "200",
 		},
 		{
@@ -121,7 +126,7 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 		{
 			"server":      "infra",
 			"method":      http.MethodGet,
-			"route":       "getLivez",
+			"route":       "GetLivez",
 			"status_code": "200",
 		},
 		{
@@ -130,25 +135,23 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 			"route":       "swagger_ui_asset",
 			"status_code": "200",
 		},
+		{
+			"server":      "infra",
+			"method":      http.MethodGet,
+			"route":       "metrics",
+			"status_code": "200",
+		},
 	} {
 		if !metricFamilyHasLabels(requestsFamily, labels) {
 			t.Fatalf("base_api_http_requests_total missing labels: %#v", labels)
 		}
 	}
 
-	if metricFamilyHasLabels(requestsFamily, map[string]string{
-		"server":      "infra",
-		"method":      http.MethodGet,
-		"route":       "metrics",
-		"status_code": "200",
-	}) {
-		t.Fatal("expected /metrics requests to bypass request metrics middleware")
-	}
-
 	expectedRoutes := map[string]struct{}{
-		"getHealthz":       {},
+		"GetHealthz":       {},
 		"unmatched":        {},
-		"getLivez":         {},
+		"GetLivez":         {},
+		"metrics":          {},
 		"swagger_ui_asset": {},
 	}
 

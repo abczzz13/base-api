@@ -17,10 +17,17 @@ import (
 	"github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/publicapi"
 	"github.com/abczzz13/base-api/internal/publicoas"
+	"github.com/abczzz13/base-api/internal/weatherapi"
+	"github.com/abczzz13/base-api/internal/weatheroas"
 )
 
 func TestGeneratedRoutersBehavior(t *testing.T) {
-	publicHandler, err := publicoas.NewServer(publicapi.NewService(weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+	coreHandler, err := publicoas.NewServer(publicapi.NewOASHandler(publicapi.NewService()))
+	if err != nil {
+		t.Fatalf("create public server: %v", err)
+	}
+
+	weatherHandler, err := weatheroas.NewServer(weatherapi.NewOASHandler(weatherapi.NewService(weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 		return weather.CurrentWeather{
 			Provider:     "open-meteo",
 			Location:     "Amsterdam",
@@ -28,12 +35,16 @@ func TestGeneratedRoutersBehavior(t *testing.T) {
 			TemperatureC: 12.5,
 			ObservedAt:   time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC),
 		}, nil
-	})))
+	}))))
 	if err != nil {
-		t.Fatalf("create public server: %v", err)
+		t.Fatalf("create weather server: %v", err)
 	}
 
-	infraHandler, err := infraoas.NewServer(infraapi.NewService(config.Config{Environment: "test"}))
+	publicHandler := http.NewServeMux()
+	publicHandler.Handle("/weather/", weatherHandler)
+	publicHandler.Handle("/", coreHandler)
+
+	infraHandler, err := infraoas.NewServer(infraapi.NewOASHandler(infraapi.NewService(config.Config{Environment: "test"})))
 	if err != nil {
 		t.Fatalf("create infra server: %v", err)
 	}

@@ -115,7 +115,7 @@ jobs:
           scan-type: image
           input: artifacts/${{ matrix.platform_slug }}.tar
           scanners: vuln
-          vuln-type: os,library
+          pkg-types: os,library
           severity: HIGH,CRITICAL
           ignore-unfixed: "true"
           format: sarif
@@ -136,7 +136,7 @@ jobs:
           scan-type: image
           input: artifacts/${{ matrix.platform_slug }}.tar
           scanners: vuln
-          vuln-type: os,library
+          pkg-types: os,library
           severity: HIGH,CRITICAL
           ignore-unfixed: "true"
           format: table

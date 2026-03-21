@@ -3,12 +3,12 @@ package apierrors
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/ogen-go/ogen/ogenerrors"
 
-	"github.com/abczzz13/base-api/internal/infraoas"
-	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
 
@@ -22,6 +22,12 @@ type Error struct {
 	RequestID  string
 }
 
+func (e Error) Error() string {
+	e = e.normalize()
+	return e.Message
+}
+
+// TooManyRequestsHeaders carries rate-limit response headers for 429 responses.
 type TooManyRequestsHeaders struct {
 	RetryAfter      string
 	RateLimit       string
@@ -52,83 +58,14 @@ func (e Error) WithContext(ctx context.Context) Error {
 	return e
 }
 
-// OASDefault converts Error into the public API generated default error wrapper.
-func (e Error) OASDefault() *publicoas.DefaultErrorStatusCodeWithHeaders {
-	e = e.normalize()
-
-	response := &publicoas.DefaultErrorStatusCodeWithHeaders{
-		StatusCode: e.StatusCode,
-		Response:   e.oasResponse(),
-	}
-	if e.RequestID != "" {
-		response.XRequestID = publicoas.NewOptString(e.RequestID)
-	}
-
-	return response
-}
-
-// OASTooManyRequests converts Error into the explicit public API 429 wrapper.
-func (e Error) OASTooManyRequests(headers TooManyRequestsHeaders) *publicoas.TooManyRequestsErrorHeaders {
-	e = e.normalize()
-
-	response := &publicoas.TooManyRequestsErrorHeaders{
-		Response: e.oasResponse(),
-	}
-	if e.RequestID != "" {
-		response.XRequestID = publicoas.NewOptString(e.RequestID)
-	}
-	if headers.RetryAfter != "" {
-		response.RetryAfter = publicoas.NewOptString(headers.RetryAfter)
-	}
-	if headers.RateLimit != "" {
-		response.Ratelimit = publicoas.NewOptString(headers.RateLimit)
-	}
-	if headers.RateLimitPolicy != "" {
-		response.RatelimitPolicy = publicoas.NewOptString(headers.RateLimitPolicy)
-	}
-
-	return response
-}
-
-// OASServiceUnavailable converts Error into the explicit public API 503 wrapper.
-func (e Error) OASServiceUnavailable() *publicoas.ServiceUnavailableErrorHeaders {
-	e = e.normalize()
-
-	response := &publicoas.ServiceUnavailableErrorHeaders{
-		Response: e.oasResponse(),
-	}
-	if e.RequestID != "" {
-		response.XRequestID = publicoas.NewOptString(e.RequestID)
-	}
-
-	return response
-}
-
-// InfraOASDefault converts Error into the infra API generated default error wrapper.
-func (e Error) InfraOASDefault() *infraoas.DefaultErrorStatusCodeWithHeaders {
-	e = e.normalize()
-
-	response := &infraoas.DefaultErrorStatusCodeWithHeaders{
-		StatusCode: e.StatusCode,
-		Response:   e.infraOASResponse(),
-	}
-	if e.RequestID != "" {
-		response.XRequestID = infraoas.NewOptString(e.RequestID)
-	}
-
-	return response
-}
-
 // Write writes a spec-compliant JSON error response that matches generated OpenAPI responses.
 func (e Error) Write(w http.ResponseWriter) {
 	e = e.normalize()
 
-	response := e.oasResponse()
-	body, err := response.MarshalJSON()
+	body, err := json.Marshal(e.responseBody())
 	if err != nil {
 		fallback := New(http.StatusInternalServerError, "internal_error", "internal server error").WithRequestID(e.RequestID)
-		fallbackResponse := fallback.oasResponse()
-		body, _ = fallbackResponse.MarshalJSON()
+		body, _ = json.Marshal(fallback.responseBody())
 		e = fallback
 	}
 
@@ -148,8 +85,7 @@ func (e Error) WriteContext(ctx context.Context, w http.ResponseWriter) {
 // WritePublicTooManyRequests writes the explicit public API 429 response.
 func (e Error) WritePublicTooManyRequests(w http.ResponseWriter, headers TooManyRequestsHeaders) {
 	e = e.normalize()
-	response := e.oasResponse()
-	if err := writePublicErrorResponse(w, http.StatusTooManyRequests, response, publicErrorHeaders{
+	if err := writePublicErrorResponse(w, http.StatusTooManyRequests, e.responseBody(), publicErrorHeaders{
 		RequestID:       e.RequestID,
 		RetryAfter:      headers.RetryAfter,
 		RateLimit:       headers.RateLimit,
@@ -162,8 +98,7 @@ func (e Error) WritePublicTooManyRequests(w http.ResponseWriter, headers TooMany
 // WritePublicServiceUnavailable writes the explicit public API 503 response.
 func (e Error) WritePublicServiceUnavailable(w http.ResponseWriter) {
 	e = e.normalize()
-	response := e.oasResponse()
-	if err := writePublicErrorResponse(w, http.StatusServiceUnavailable, response, publicErrorHeaders{
+	if err := writePublicErrorResponse(w, http.StatusServiceUnavailable, e.responseBody(), publicErrorHeaders{
 		RequestID: e.RequestID,
 	}); err != nil {
 		e.Write(w)
@@ -173,6 +108,17 @@ func (e Error) WritePublicServiceUnavailable(w http.ResponseWriter) {
 // WriteError writes a spec-compliant error response to the ResponseWriter.
 func WriteError(ctx context.Context, w http.ResponseWriter, code, message string, statusCode int) {
 	New(statusCode, code, message).WriteContext(ctx, w)
+}
+
+// ResolveError extracts a canonical API error from err (defaulting to 500) and enriches it from ctx.
+func ResolveError(ctx context.Context, err error) Error {
+	apiErr := New(http.StatusInternalServerError, "internal_error", "internal server error")
+	var typedErr Error
+	if errors.As(err, &typedErr) {
+		apiErr = typedErr
+	}
+
+	return apiErr.WithContext(ctx)
 }
 
 // FromOgenError maps ogen framework errors to canonical API errors.
@@ -199,30 +145,18 @@ func (e Error) normalize() Error {
 	return e
 }
 
-func (e Error) oasResponse() publicoas.ErrorResponse {
-	response := publicoas.ErrorResponse{
-		Code:    e.Code,
-		Message: e.Message,
-	}
-
-	if e.RequestID != "" {
-		response.RequestId = publicoas.NewOptString(e.RequestID)
-	}
-
-	return response
+type responseBody struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"requestId,omitempty"`
 }
 
-func (e Error) infraOASResponse() infraoas.ErrorResponse {
-	response := infraoas.ErrorResponse{
-		Code:    e.Code,
-		Message: e.Message,
+func (e Error) responseBody() responseBody {
+	return responseBody{
+		Code:      e.Code,
+		Message:   e.Message,
+		RequestID: e.RequestID,
 	}
-
-	if e.RequestID != "" {
-		response.RequestId = infraoas.NewOptString(e.RequestID)
-	}
-
-	return response
 }
 
 type publicErrorHeaders struct {
@@ -232,8 +166,8 @@ type publicErrorHeaders struct {
 	RateLimitPolicy string
 }
 
-func writePublicErrorResponse(w http.ResponseWriter, statusCode int, response publicoas.ErrorResponse, headers publicErrorHeaders) error {
-	body, err := response.MarshalJSON()
+func writePublicErrorResponse(w http.ResponseWriter, statusCode int, response responseBody, headers publicErrorHeaders) error {
+	body, err := json.Marshal(response)
 	if err != nil {
 		return err
 	}

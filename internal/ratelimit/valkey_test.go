@@ -22,7 +22,7 @@ func TestNewValkeyStoreRequiresClient(t *testing.T) {
 }
 
 func TestValkeyStoreAllowBuildsBucketKeyAndArgs(t *testing.T) {
-	const key = "public:getHealthz:192.0.2.10"
+	const key = "public:GetHealthz:192.0.2.10"
 	now := time.UnixMilli(1700000000123)
 	store := &ValkeyStore{
 		keyPrefix: "custom-prefix",
@@ -59,7 +59,7 @@ func TestValkeyStoreAllowBuildsBucketKeyAndArgs(t *testing.T) {
 func TestValkeyStoreAllowRejectsInvalidPolicy(t *testing.T) {
 	store := &ValkeyStore{}
 
-	_, err := store.Allow(context.Background(), "public:getHealthz:192.0.2.10", Policy{})
+	_, err := store.Allow(context.Background(), "public:GetHealthz:192.0.2.10", Policy{})
 	if err == nil {
 		t.Fatal("expected policy validation error")
 	}

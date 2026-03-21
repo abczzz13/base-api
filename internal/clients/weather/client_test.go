@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -208,9 +209,9 @@ func TestServiceGetCurrentReturnsDecodeErrorForMalformedGeocodingResponse(t *tes
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			forecastRequests := 0
+			var forecastRequests atomic.Int32
 			forecastServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				forecastRequests++
+				forecastRequests.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"current":{"time":1772884800,"temperature_2m":12.5,"weather_code":3}}`))
 			}))
@@ -232,7 +233,7 @@ func TestServiceGetCurrentReturnsDecodeErrorForMalformedGeocodingResponse(t *tes
 			if !strings.Contains(decodeErr.Error(), tt.wantContains) {
 				t.Fatalf("expected decode error to mention %q, got %q", tt.wantContains, decodeErr.Error())
 			}
-			if diff := cmp.Diff(0, forecastRequests); diff != "" {
+			if diff := cmp.Diff(int32(0), forecastRequests.Load()); diff != "" {
 				t.Fatalf("forecast request count mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -320,6 +321,160 @@ func TestServiceGetCurrentUsesSingleTimeoutBudget(t *testing.T) {
 
 	if elapsed := time.Since(startedAt); elapsed > 100*time.Millisecond {
 		t.Fatalf("GetCurrent exceeded single timeout budget: elapsed %s", elapsed)
+	}
+}
+
+func TestNewValidation(t *testing.T) {
+	geocodingClient, err := httpclient.New(httpclient.Config{Client: "geo", BaseURL: "http://localhost"})
+	if err != nil {
+		t.Fatalf("create geocoding client: %v", err)
+	}
+	forecastClient, err := httpclient.New(httpclient.Config{Client: "fc", BaseURL: "http://localhost"})
+	if err != nil {
+		t.Fatalf("create forecast client: %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		geocodingClient *httpclient.Service
+		forecastClient  *httpclient.Service
+		timeout         time.Duration
+		wantErr         string
+	}{
+		{
+			name:            "nil geocoding client",
+			geocodingClient: nil,
+			forecastClient:  forecastClient,
+			timeout:         time.Second,
+			wantErr:         "weather geocoding client is required",
+		},
+		{
+			name:            "nil forecast client",
+			geocodingClient: geocodingClient,
+			forecastClient:  nil,
+			timeout:         time.Second,
+			wantErr:         "weather forecast client is required",
+		},
+		{
+			name:            "zero timeout",
+			geocodingClient: geocodingClient,
+			forecastClient:  forecastClient,
+			timeout:         0,
+			wantErr:         "weather timeout must be positive",
+		},
+		{
+			name:            "negative timeout",
+			geocodingClient: geocodingClient,
+			forecastClient:  forecastClient,
+			timeout:         -time.Second,
+			wantErr:         "weather timeout must be positive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := New(tt.geocodingClient, tt.forecastClient, "", tt.timeout)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if diff := cmp.Diff(tt.wantErr, err.Error()); diff != "" {
+				t.Fatalf("error message mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestWeatherCodeDescription(t *testing.T) {
+	tests := []struct {
+		code int
+		want string
+	}{
+		{0, "Clear sky"},
+		{1, "Mainly clear"},
+		{2, "Partly cloudy"},
+		{3, "Overcast"},
+		{45, "Fog"},
+		{48, "Fog"},
+		{51, "Drizzle"},
+		{53, "Drizzle"},
+		{55, "Drizzle"},
+		{56, "Freezing drizzle"},
+		{57, "Freezing drizzle"},
+		{61, "Rain"},
+		{63, "Rain"},
+		{65, "Rain"},
+		{66, "Freezing rain"},
+		{67, "Freezing rain"},
+		{71, "Snow"},
+		{73, "Snow"},
+		{75, "Snow"},
+		{77, "Snow"},
+		{80, "Rain showers"},
+		{81, "Rain showers"},
+		{82, "Rain showers"},
+		{85, "Snow showers"},
+		{86, "Snow showers"},
+		{95, "Thunderstorm"},
+		{96, "Thunderstorm with hail"},
+		{99, "Thunderstorm with hail"},
+		{999, "Weather code 999"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := weatherCodeDescription(tt.code)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("weatherCodeDescription(%d) mismatch (-want +got):\n%s", tt.code, diff)
+			}
+		})
+	}
+}
+
+func TestServiceGetCurrentEmptyLocation(t *testing.T) {
+	geocodingClient, err := httpclient.New(httpclient.Config{Client: "geo", BaseURL: "http://localhost"})
+	if err != nil {
+		t.Fatalf("create geocoding client: %v", err)
+	}
+	forecastClient, err := httpclient.New(httpclient.Config{Client: "fc", BaseURL: "http://localhost"})
+	if err != nil {
+		t.Fatalf("create forecast client: %v", err)
+	}
+
+	svc, err := New(geocodingClient, forecastClient, "", time.Second)
+	if err != nil {
+		t.Fatalf("create weather client: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		location string
+	}{
+		{"empty string", ""},
+		{"spaces only", "  "},
+		{"tab only", "\t"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.GetCurrent(context.Background(), tt.location)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if diff := cmp.Diff("location is required", err.Error()); diff != "" {
+				t.Fatalf("error message mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestClientFuncNilReturnsError(t *testing.T) {
+	var fn ClientFunc
+	_, err := fn.GetCurrent(context.Background(), "Amsterdam")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if diff := cmp.Diff("weather client is required", err.Error()); diff != "" {
+		t.Fatalf("error message mismatch (-want +got):\n%s", diff)
 	}
 }
 

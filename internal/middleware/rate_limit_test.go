@@ -23,7 +23,7 @@ func TestRateLimitRejectsRequestsAndRecordsMetrics(t *testing.T) {
 	requestMetrics, _ := newTestHTTPRequestMetrics(t)
 
 	server := "public"
-	route := "getHealthz"
+	route := "GetHealthz"
 	method := http.MethodGet
 
 	beforeRejected := testutil.ToFloat64(requestMetrics.httpRejectedRequestsTotal.WithLabelValues(server, method, route, RequestRejectionReasonRateLimit))
@@ -81,7 +81,7 @@ func TestRateLimitFailsOpenAndRecordsBackendErrors(t *testing.T) {
 	requestMetrics, _ := newTestHTTPRequestMetrics(t)
 
 	server := "public"
-	route := "getHealthz"
+	route := "GetHealthz"
 	method := http.MethodGet
 
 	beforeErrors := testutil.ToFloat64(requestMetrics.httpRateLimitErrorsTotal.WithLabelValues(server, method, route))
@@ -124,7 +124,7 @@ func TestRateLimitBackendFailureReturnsServiceUnavailableAndSeparateRejectionRea
 	requestMetrics, _ := newTestHTTPRequestMetrics(t)
 
 	server := "public"
-	route := "getHealthz"
+	route := "GetHealthz"
 	method := http.MethodGet
 
 	beforeErrors := testutil.ToFloat64(requestMetrics.httpRateLimitErrorsTotal.WithLabelValues(server, method, route))
@@ -217,7 +217,7 @@ func TestRateLimitStartupFallbackSuppressesPerRequestWarnings(t *testing.T) {
 			return ratelimit.Decision{}, fmt.Errorf("%w: valkey unavailable", ratelimit.ErrStartupBackendUnavailable)
 		}),
 		Server:        "public",
-		RouteLabel:    func(*http.Request) string { return "getHealthz" },
+		RouteLabel:    func(*http.Request) string { return "GetHealthz" },
 		FailOpen:      true,
 		DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

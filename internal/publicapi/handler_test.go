@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -262,7 +263,7 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 	matches := make([]sdktrace.ReadOnlySpan, 0, len(spans))
 	for _, span := range spans {
 		for _, attr := range span.Attributes() {
-			if string(attr.Key) == "api.operation.id" && attr.Value.Type() == attribute.STRING && attr.Value.AsString() == "getHealthz" {
+			if string(attr.Key) == "api.operation.name" && attr.Value.Type() == attribute.STRING && attr.Value.AsString() == "GetHealthz" {
 				matches = append(matches, span)
 				break
 			}
@@ -274,12 +275,12 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 		for _, span := range spans {
 			names = append(names, span.Name())
 		}
-		t.Fatalf("expected exactly one span with api.operation.id=getHealthz, got %d spans (names=%v)", len(matches), names)
+		t.Fatalf("expected exactly one span with api.operation.name=GetHealthz, got %d spans (names=%v)", len(matches), names)
 	}
 
 	targetSpan := matches[0]
-	if got := targetSpan.Name(); got != "GET getHealthz" {
-		t.Fatalf("span name mismatch: want %q, got %q", "GET getHealthz", got)
+	if got := targetSpan.Name(); got != "GET GetHealthz" {
+		t.Fatalf("span name mismatch: want %q, got %q", "GET GetHealthz", got)
 	}
 
 	attrs := map[string]string{}
@@ -291,7 +292,6 @@ func TestNewPublicHandlerTracingAddsOperationAttributesToSpans(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"api.operation.id":      "getHealthz",
 		"api.operation.name":    "GetHealthz",
 		"api.operation.summary": "Public health endpoint",
 	} {
@@ -345,6 +345,173 @@ func TestNewPublicHandlerWeatherEndpointUsesInjectedClient(t *testing.T) {
 	}
 }
 
+func TestNewPublicHandlerWeatherMetricsAndTracingUseWeatherOperationName(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+	})
+
+	registry := prometheus.NewRegistry()
+	requestMetrics, err := middleware.NewHTTPRequestMetrics(registry)
+	if err != nil {
+		t.Fatalf("create request metrics: %v", err)
+	}
+
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+	})
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	handler, err := NewHandler(config.Config{
+		Environment: "test",
+		OTEL: config.OTELConfig{
+			TracingEnabled: true,
+		},
+	}, Dependencies{
+		RequestMetrics:         requestMetrics,
+		RequestAuditRepository: requestaudit.NopRepository(),
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{
+				Provider:     "open-meteo",
+				Location:     "Amsterdam",
+				Condition:    "Cloudy",
+				TemperatureC: 12.5,
+				ObservedAt:   time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC),
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/weather/current?location=Amsterdam", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatalf("gather prometheus metrics: %v", err)
+	}
+
+	requestsFamily, ok := metricFamilyByName(families, "base_api_http_requests_total")
+	if !ok {
+		t.Fatal("base_api_http_requests_total metric family not found")
+	}
+	if !metricFamilyHasLabels(requestsFamily, map[string]string{
+		"server":      "public",
+		"method":      http.MethodGet,
+		"route":       "GetCurrentWeather",
+		"status_code": "200",
+	}) {
+		t.Fatal("expected weather request metric with route=GetCurrentWeather")
+	}
+
+	spans := recorder.Ended()
+	matches := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	for _, span := range spans {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "api.operation.name" && attr.Value.Type() == attribute.STRING && attr.Value.AsString() == "GetCurrentWeather" {
+				matches = append(matches, span)
+				break
+			}
+		}
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly one span with api.operation.name=GetCurrentWeather, got %d", len(matches))
+	}
+	if got := matches[0].Name(); got != "GET GetCurrentWeather" {
+		t.Fatalf("span name mismatch: want %q, got %q", "GET GetCurrentWeather", got)
+	}
+}
+
+func TestNewPublicHandlerWeatherRateLimitUsesSharedMiddlewareOnce(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	requestMetrics, err := middleware.NewHTTPRequestMetrics(registry)
+	if err != nil {
+		t.Fatalf("create request metrics: %v", err)
+	}
+
+	rateLimitCalls := 0
+	handler, err := NewHandler(config.Config{
+		Environment: "test",
+		RateLimit: config.RateLimitConfig{
+			Enabled:       true,
+			FailOpen:      true,
+			Timeout:       50 * time.Millisecond,
+			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
+			RouteOverrides: map[string]ratelimit.RouteOverride{
+				"GetCurrentWeather": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+			},
+		},
+	}, Dependencies{
+		RequestMetrics:         requestMetrics,
+		RequestAuditRepository: requestaudit.NopRepository(),
+		RateLimiter: ratelimit.StoreFunc(func(ctx context.Context, key string, policy ratelimit.Policy) (ratelimit.Decision, error) {
+			rateLimitCalls++
+			if got, want := key, "public:GetCurrentWeather:192.0.2.10"; got != want {
+				t.Fatalf("key mismatch: want %q, got %q", want, got)
+			}
+			if diff := cmp.Diff(ratelimit.Policy{RequestsPerSecond: 1, Burst: 1}, policy); diff != "" {
+				t.Fatalf("policy mismatch (-want +got):\n%s", diff)
+			}
+			return ratelimit.Decision{Allowed: true}, nil
+		}),
+		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{
+				Provider:     "open-meteo",
+				Location:     "Amsterdam",
+				Condition:    "Cloudy",
+				TemperatureC: 12.5,
+				ObservedAt:   time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC),
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/weather/current?location=Amsterdam", nil)
+	req.RemoteAddr = "192.0.2.10:43123"
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: want %d, got %d", http.StatusOK, rr.Code)
+	}
+	if got := rateLimitCalls; got != 1 {
+		t.Fatalf("rate limit call count mismatch: want %d, got %d", 1, got)
+	}
+}
+
+func TestNewPublicHandlerWeatherClientRequiresDependency(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	requestMetrics, err := middleware.NewHTTPRequestMetrics(registry)
+	if err != nil {
+		t.Fatalf("create request metrics: %v", err)
+	}
+
+	_, err = NewHandler(config.Config{Environment: "test"}, Dependencies{
+		RequestMetrics:         requestMetrics,
+		RequestAuditRepository: requestaudit.NopRepository(),
+	})
+	if err == nil {
+		t.Fatal("expected missing weather client dependency error")
+	}
+	if got := err.Error(); got != "weather client dependency is required" {
+		t.Fatalf("error mismatch: want %q, got %q", "weather client dependency is required", got)
+	}
+}
+
 func TestNewPublicHandlerRateLimitRequiresDependencyWhenEnabled(t *testing.T) {
 	_, err := newPublicHandlerForTestWithDependencies(t, config.Config{
 		Environment: "test",
@@ -376,7 +543,7 @@ func TestNewPublicHandlerRateLimitRejectsRequests(t *testing.T) {
 			Timeout:       50 * time.Millisecond,
 			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
 			RouteOverrides: map[string]ratelimit.RouteOverride{
-				"getHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+				"GetHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
 			},
 		},
 	}, Dependencies{
@@ -439,7 +606,7 @@ func TestNewPublicHandlerRateLimitUsesSharedTrustedProxyCIDRsWhenAuditDisabled(t
 			if diff := cmp.Diff(ratelimit.Policy{RequestsPerSecond: 1, Burst: 1}, policy); diff != "" {
 				t.Fatalf("policy mismatch (-want +got):\n%s", diff)
 			}
-			if got, want := key, "public:getHealthz:8.8.8.8"; got != want {
+			if got, want := key, "public:GetHealthz:8.8.8.8"; got != want {
 				t.Fatalf("key mismatch: want %q, got %q", want, got)
 			}
 			return ratelimit.Decision{Allowed: true}, nil
@@ -469,7 +636,7 @@ func TestNewPublicHandlerRateLimitFailsOpen(t *testing.T) {
 			Timeout:       50 * time.Millisecond,
 			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
 			RouteOverrides: map[string]ratelimit.RouteOverride{
-				"getHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+				"GetHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
 			},
 		},
 	}, Dependencies{
@@ -499,7 +666,7 @@ func TestNewPublicHandlerRateLimitBackendFailureReturnsServiceUnavailable(t *tes
 			Timeout:       50 * time.Millisecond,
 			DefaultPolicy: ratelimit.Policy{RequestsPerSecond: 1, Burst: 1},
 			RouteOverrides: map[string]ratelimit.RouteOverride{
-				"getHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
+				"GetHealthz": {Burst: intPtr(1), RequestsPerSecond: float64Ptr(1)},
 			},
 		},
 	}, Dependencies{
@@ -549,8 +716,59 @@ func newPublicHandlerForTestWithDependencies(t *testing.T, cfg config.Config, de
 	if deps.RequestAuditRepository == nil {
 		deps.RequestAuditRepository = requestaudit.NopRepository()
 	}
+	if deps.WeatherClient == nil {
+		deps.WeatherClient = weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+			return weather.CurrentWeather{
+				Provider:     "open-meteo",
+				Location:     "Amsterdam",
+				Condition:    "Cloudy",
+				TemperatureC: 12.5,
+				ObservedAt:   time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC),
+			}, nil
+		})
+	}
 
 	return NewHandler(cfg, deps)
+}
+
+func metricFamilyByName(families []*dto.MetricFamily, name string) (*dto.MetricFamily, bool) {
+	for _, family := range families {
+		if family.GetName() == name {
+			return family, true
+		}
+	}
+
+	return nil, false
+}
+
+func metricFamilyHasLabels(family *dto.MetricFamily, labels map[string]string) bool {
+	for _, metric := range family.GetMetric() {
+		if metricHasLabels(metric, labels) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func metricHasLabels(metric *dto.Metric, labels map[string]string) bool {
+	for labelName, wantValue := range labels {
+		if gotValue, ok := metricLabelValue(metric, labelName); !ok || gotValue != wantValue {
+			return false
+		}
+	}
+
+	return true
+}
+
+func metricLabelValue(metric *dto.Metric, labelName string) (string, bool) {
+	for _, label := range metric.GetLabel() {
+		if label.GetName() == labelName {
+			return label.GetValue(), true
+		}
+	}
+
+	return "", false
 }
 
 func float64Ptr(value float64) *float64 {

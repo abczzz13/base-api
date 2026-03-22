@@ -13,6 +13,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/logger"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/outboundaudit"
 	"github.com/abczzz13/base-api/internal/postgres"
 	"github.com/abczzz13/base-api/internal/publicapi"
@@ -103,9 +104,15 @@ func Run(
 		return err
 	}
 
+	notesRepository, err := notes.NewPostgresRepository(database)
+	if err != nil {
+		return fmt.Errorf("configure notes repository: %w", err)
+	}
+
 	publicDeps := publicapi.Dependencies{
 		RequestMetrics:         metricsRuntime.http,
 		RequestAuditRepository: requestAuditRepository,
+		NotesRepository:        notesRepository,
 		RateLimiter:            rateLimiter,
 	}
 	weatherClient, err := setupWeatherClient(cfg, metricsRuntime.httpClient, outboundAuditRepository)

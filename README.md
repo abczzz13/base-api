@@ -19,6 +19,7 @@ The goal is to give new services a clean, idiomatic starting point with strong d
 - Strict env-based configuration with `<KEY>_FILE` support
 - Request IDs propagated through logs, errors, and audit records
 - Request and outbound HTTP audit persistence in PostgreSQL
+- A DB-backed notes CRUD example with cursor pagination and weather enrichment
 - An outbound weather integration example built on `internal/httpclient`
 - Reproducible code generation checks for `ogen` and `sqlc`
 - Distroless container image and hardened compose setup
@@ -48,8 +49,12 @@ Request flow is:
 4. errors are encoded to a shared schema and include `requestId`
 5. request metadata is correlated in logs, traces, and audit records
 
-The template includes one concrete outbound example API: `GET /weather/current?location=...`, backed by Open-Meteo geocoding and forecast APIs.
-The weather endpoint is part of the standard public surface and is served from its own OpenAPI spec and generated package while still sharing the main public HTTP entrypoint, middleware chain, outbound metrics, and audit records.
+The template includes two concrete example APIs:
+
+- `GET /weather/current?location=...`, a read-only outbound integration backed by Open-Meteo geocoding and forecast APIs.
+- `/notes`, a full CRUD resource backed by PostgreSQL, `sqlc`, and cursor pagination that enriches notes with a stored weather snapshot for the requested location.
+
+The weather endpoint is served from its own OpenAPI spec and generated package while still sharing the main public HTTP entrypoint, middleware chain, outbound metrics, and audit records. The notes endpoints live in the main public spec so the core public surface also demonstrates full CRUD behavior.
 
 ## Quickstart
 
@@ -87,6 +92,7 @@ If you use Nushell, `nix-direnv` is usually the smoothest option because it keep
 Useful endpoints after startup:
 
 - Public API: `http://127.0.0.1:8080/healthz`
+- Public notes example: `http://127.0.0.1:8080/notes`
 - Public weather example: `http://127.0.0.1:8080/weather/current?location=Amsterdam`
 - Infra liveness: `http://127.0.0.1:9090/livez`
 - Infra readiness: `http://127.0.0.1:9090/readyz`
@@ -153,7 +159,7 @@ nix develop -c just check
 - Migrations live in `db/migrations`.
 - SQL queries live in `db/queries` and generate code into `internal/dbsqlc`.
 - OpenAPI specs live in `api/` and generate server code into `internal/publicoas`, `internal/weatheroas`, and `internal/infraoas`.
-- The public API is split across `public.yaml` for core endpoints and `weather.yaml` for the weather endpoint.
+- The public API keeps core endpoints and the notes CRUD example in `public.yaml`, while `weather.yaml` holds the standalone weather proxy example.
 - The weather endpoint uses Open-Meteo by default and can be pointed at other origins with `WEATHER_GEOCODING_BASE_URL` and `WEATHER_FORECAST_BASE_URL`.
 - Every package should keep a `doc.go` package comment.
 

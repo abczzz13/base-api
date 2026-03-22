@@ -6,20 +6,25 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/abczzz13/base-api/internal/clients/weather"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/publicapi"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
 
-func TestNewOASHandlerNilServiceReturnsHandler(t *testing.T) {
-	handler := publicapi.NewOASHandler(nil)
-	if handler == nil {
-		t.Fatal("expected non-nil handler from NewOASHandler(nil)")
-	}
-}
-
 func TestOASHandlerGetHealthzIncludesRequestIDHeader(t *testing.T) {
-	handler := publicapi.NewOASHandler(publicapi.NewService())
+	notesService, err := notes.NewService(notes.RepositoryFuncs{}, weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
+		return weather.CurrentWeather{}, nil
+	}))
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	handler, err := publicapi.NewOASHandler(publicapi.NewService(), notesService)
+	if err != nil {
+		t.Fatalf("NewOASHandler returned error: %v", err)
+	}
 
 	ctx := requestid.WithContext(context.Background(), "req-123")
 	got, err := handler.GetHealthz(ctx)

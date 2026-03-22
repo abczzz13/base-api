@@ -11,7 +11,12 @@ import (
 
 func TestKnownPublicOperationNamesMatchesGeneratedOperations(t *testing.T) {
 	wantOperations := map[string]struct{}{
+		publicoas.CreateNoteOperation:         {},
+		publicoas.DeleteNoteOperation:         {},
 		publicoas.GetHealthzOperation:         {},
+		publicoas.GetNoteOperation:            {},
+		publicoas.ListNotesOperation:          {},
+		publicoas.UpdateNoteOperation:         {},
 		weatheroas.GetCurrentWeatherOperation: {},
 	}
 

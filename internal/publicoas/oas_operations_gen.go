@@ -6,5 +6,10 @@ package publicoas
 type OperationName = string
 
 const (
+	CreateNoteOperation OperationName = "CreateNote"
+	DeleteNoteOperation OperationName = "DeleteNote"
 	GetHealthzOperation OperationName = "GetHealthz"
+	GetNoteOperation    OperationName = "GetNote"
+	ListNotesOperation  OperationName = "ListNotes"
+	UpdateNoteOperation OperationName = "UpdateNote"
 )

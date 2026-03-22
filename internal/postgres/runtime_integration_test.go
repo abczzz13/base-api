@@ -15,7 +15,7 @@ import (
 func TestOpenMigrateAndMetricsIntegration(t *testing.T) {
 	dbURL := strings.TrimSpace(os.Getenv("TEST_DB_URL"))
 	if dbURL == "" {
-		t.Skip("set TEST_DB_URL to run PostgreSQL integration tests")
+		t.Fatal("set TEST_DB_URL to run PostgreSQL integration tests")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -31,7 +31,7 @@ func TestOpenMigrateAndMetricsIntegration(t *testing.T) {
 		ConnectTimeout:    5 * time.Second,
 	})
 	if err != nil {
-		t.Skipf("PostgreSQL not reachable with TEST_DB_URL: %v", err)
+		t.Fatalf("PostgreSQL not reachable with TEST_DB_URL: %v", err)
 	}
 	defer pool.Close()
 

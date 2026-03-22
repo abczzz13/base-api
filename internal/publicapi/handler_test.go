@@ -25,6 +25,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/ratelimit"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 )
@@ -375,6 +376,7 @@ func TestNewPublicHandlerWeatherMetricsAndTracingUseWeatherOperationName(t *test
 	}, Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{
 				Provider:     "open-meteo",
@@ -456,6 +458,7 @@ func TestNewPublicHandlerWeatherRateLimitUsesSharedMiddlewareOnce(t *testing.T) 
 	}, Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		NotesRepository:        notes.RepositoryFuncs{},
 		RateLimiter: ratelimit.StoreFunc(func(ctx context.Context, key string, policy ratelimit.Policy) (ratelimit.Decision, error) {
 			rateLimitCalls++
 			if got, want := key, "public:GetCurrentWeather:192.0.2.10"; got != want {
@@ -503,6 +506,7 @@ func TestNewPublicHandlerWeatherClientRequiresDependency(t *testing.T) {
 	_, err = NewHandler(config.Config{Environment: "test"}, Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		NotesRepository:        notes.RepositoryFuncs{},
 	})
 	if err == nil {
 		t.Fatal("expected missing weather client dependency error")
@@ -715,6 +719,9 @@ func newPublicHandlerForTestWithDependencies(t *testing.T, cfg config.Config, de
 	deps.RequestMetrics = requestMetrics
 	if deps.RequestAuditRepository == nil {
 		deps.RequestAuditRepository = requestaudit.NopRepository()
+	}
+	if deps.NotesRepository == nil {
+		deps.NotesRepository = notes.RepositoryFuncs{}
 	}
 	if deps.WeatherClient == nil {
 		deps.WeatherClient = weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {

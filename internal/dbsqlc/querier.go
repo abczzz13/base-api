@@ -6,12 +6,20 @@ package dbsqlc
 
 import (
 	"context"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	DatabasePing(ctx context.Context) (int32, error)
+	DeleteNote(ctx context.Context, id uuid.UUID) (int64, error)
+	GetNote(ctx context.Context, id uuid.UUID) (Note, error)
 	InsertHTTPClientAudit(ctx context.Context, arg InsertHTTPClientAuditParams) error
 	InsertHTTPRequestAudit(ctx context.Context, arg InsertHTTPRequestAuditParams) error
+	InsertNote(ctx context.Context, arg InsertNoteParams) (InsertNoteRow, error)
+	ListNotesPage(ctx context.Context, arg ListNotesPageParams) ([]Note, error)
+	UpdateNote(ctx context.Context, arg UpdateNoteParams) (pgtype.Timestamptz, error)
 }
 
 var _ Querier = (*Queries)(nil)

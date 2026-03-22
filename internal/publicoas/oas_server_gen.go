@@ -9,6 +9,7 @@ import (
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
 	BaseHandler
+	NotesHandler
 	// NewError creates *DefaultErrorStatusCodeWithHeaders from error returned by handler.
 	//
 	// Used for common default response.
@@ -25,6 +26,42 @@ type BaseHandler interface {
 	//
 	// GET /healthz
 	GetHealthz(ctx context.Context) (GetHealthzRes, error)
+}
+
+// NotesHandler handles operations described by OpenAPI v3 specification.
+//
+// x-ogen-operation-group: Notes
+type NotesHandler interface {
+	// CreateNote implements createNote operation.
+	//
+	// Create a weather-enriched note.
+	//
+	// POST /notes
+	CreateNote(ctx context.Context, req *CreateNoteRequest) (CreateNoteRes, error)
+	// DeleteNote implements deleteNote operation.
+	//
+	// Delete a note by ID.
+	//
+	// DELETE /notes/{noteId}
+	DeleteNote(ctx context.Context, params DeleteNoteParams) (DeleteNoteRes, error)
+	// GetNote implements getNote operation.
+	//
+	// Get a note by ID.
+	//
+	// GET /notes/{noteId}
+	GetNote(ctx context.Context, params GetNoteParams) (GetNoteRes, error)
+	// ListNotes implements listNotes operation.
+	//
+	// List weather-enriched notes.
+	//
+	// GET /notes
+	ListNotes(ctx context.Context, params ListNotesParams) (ListNotesRes, error)
+	// UpdateNote implements updateNote operation.
+	//
+	// Update a note by ID.
+	//
+	// PATCH /notes/{noteId}
+	UpdateNote(ctx context.Context, req *UpdateNoteRequest, params UpdateNoteParams) (UpdateNoteRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

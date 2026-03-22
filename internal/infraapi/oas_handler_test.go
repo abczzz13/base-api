@@ -14,7 +14,10 @@ import (
 )
 
 func TestInfraOASHandlerIncludesRequestIDHeader(t *testing.T) {
-	handler := infraapi.NewOASHandler(infraapi.NewService(config.Config{}))
+	handler, err := infraapi.NewOASHandler(infraapi.NewService(config.Config{}))
+	if err != nil {
+		t.Fatalf("NewOASHandler returned error: %v", err)
+	}
 
 	ctx := requestid.WithContext(context.Background(), "req-123")
 	got, err := handler.GetLivez(ctx)
@@ -31,19 +34,22 @@ func TestInfraOASHandlerIncludesRequestIDHeader(t *testing.T) {
 	}
 }
 
-func TestNewOASHandlerNilServiceReturnsHandler(t *testing.T) {
-	handler := infraapi.NewOASHandler(nil)
-	if handler == nil {
-		t.Fatal("expected non-nil handler from NewOASHandler(nil)")
+func TestNewOASHandlerNilServiceReturnsError(t *testing.T) {
+	_, err := infraapi.NewOASHandler(nil)
+	if err == nil {
+		t.Fatal("expected error from NewOASHandler(nil)")
 	}
 }
 
 func TestInfraOASHandlerMapsGeneratedDefaultErrors(t *testing.T) {
-	handler := infraapi.NewOASHandler(infraapi.NewService(config.Config{}, infraapi.ReadinessCheckerFunc(func(context.Context) error {
+	handler, err := infraapi.NewOASHandler(infraapi.NewService(config.Config{}, infraapi.ReadinessCheckerFunc(func(context.Context) error {
 		return errors.New("dependency down")
 	})))
+	if err != nil {
+		t.Fatalf("NewOASHandler returned error: %v", err)
+	}
 
-	_, err := handler.GetReadyz(context.Background())
+	_, err = handler.GetReadyz(context.Background())
 	var gotErr *infraoas.DefaultErrorStatusCodeWithHeaders
 	if !errors.As(err, &gotErr) {
 		t.Fatalf("GetReadyz error type mismatch: got %T (%v)", err, err)

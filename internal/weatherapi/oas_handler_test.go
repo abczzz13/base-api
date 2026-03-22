@@ -64,7 +64,10 @@ func TestOASHandlerGetCurrentWeatherMapsResponsesAndErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := weatherapi.NewOASHandler(weatherapi.NewService(tt.weatherClient))
+			handler, err := weatherapi.NewOASHandler(weatherapi.NewService(tt.weatherClient))
+			if err != nil {
+				t.Fatalf("NewOASHandler returned error: %v", err)
+			}
 			got, err := handler.GetCurrentWeather(tt.ctx, weatheroas.GetCurrentWeatherParams{Location: "Amsterdam"})
 
 			if tt.wantErr == nil {

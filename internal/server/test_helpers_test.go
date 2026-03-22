@@ -13,7 +13,7 @@ func testDatabaseURL(tb testing.TB) string {
 		return value
 	}
 
-	tb.Skip("set TEST_DB_URL to run database-backed tests")
+	tb.Fatal("set TEST_DB_URL to run database-backed tests")
 
 	return ""
 }

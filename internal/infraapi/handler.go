@@ -2,6 +2,7 @@ package infraapi
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,9 +34,14 @@ func NewHandler(cfg config.Config, deps Dependencies) (http.Handler, error) {
 
 	infraService := NewService(cfg, DefaultReadinessCheckers(deps.Database, deps.Valkey)...)
 
-	infraAPI, err := geninfra.NewServer(NewOASHandler(infraService), geninfra.WithErrorHandler(apierrors.OgenErrorHandler))
+	oasHandler, err := NewOASHandler(infraService)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create infra OAS handler: %w", err)
+	}
+
+	infraAPI, err := geninfra.NewServer(oasHandler, geninfra.WithErrorHandler(apierrors.OgenErrorHandler))
+	if err != nil {
+		return nil, fmt.Errorf("create infra OAS server: %w", err)
 	}
 
 	routeLabel := requestMetricsRouteLabeler(infraAPI)

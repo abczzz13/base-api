@@ -252,7 +252,7 @@ func requireDatabaseURLAndReachable(t *testing.T) string {
 		ConnectTimeout:    2 * time.Second,
 	})
 	if err != nil {
-		t.Skipf("PostgreSQL integration unavailable: %v", err)
+		t.Fatalf("PostgreSQL integration unavailable: %v", err)
 	}
 	pool.Close()
 

@@ -23,7 +23,7 @@ func TestSetupDatabaseIntegrationSuccess(t *testing.T) {
 
 	database, shutdown, err := SetupRuntime(ctx, cfg, registerer)
 	if err != nil {
-		t.Skipf("PostgreSQL integration unavailable: %v", err)
+		t.Fatalf("PostgreSQL integration unavailable: %v", err)
 	}
 	if database == nil {
 		t.Fatal("setupDatabase returned nil database")
@@ -52,7 +52,7 @@ func TestSetupDatabaseIntegrationFailsWhenMetricsAlreadyRegistered(t *testing.T)
 
 	database, shutdown, err := SetupRuntime(ctx, cfg, registerer)
 	if err != nil {
-		t.Skipf("PostgreSQL integration unavailable: %v", err)
+		t.Fatalf("PostgreSQL integration unavailable: %v", err)
 	}
 	if database == nil {
 		t.Fatal("initial setupDatabase returned nil database")
@@ -84,7 +84,7 @@ func testDatabaseURL(tb testing.TB) string {
 		return value
 	}
 
-	tb.Skip("set TEST_DB_URL to run database-backed tests")
+	tb.Fatal("set TEST_DB_URL to run database-backed tests")
 
 	return ""
 }

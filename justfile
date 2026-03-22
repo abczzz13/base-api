@@ -509,13 +509,31 @@ check-action-pins:
         exit 1
     fi
 
-check: fmt-go-check fmt-nix-check lint test sqlc-check ogen-check vendor-check flake-check
+[script]
+db-ready:
+    if [ -f .env ]; then set -a; source .env; set +a; fi
+    db_url="${TEST_DB_URL:-${DB_URL:-{{db_url_default}}}}"
+    # Strip postgres:// or postgresql:// scheme
+    rest="${db_url#*://}"
+    # Extract user:pass@host:port/dbname
+    userinfo="${rest%%@*}"
+    user="${userinfo%%:*}"
+    hostportdb="${rest#*@}"
+    hostport="${hostportdb%%/*}"
+    host="${hostport%%:*}"
+    port="${hostport#*:}"
+    port="${port%%\?*}"
+    dbname="${hostportdb#*/}"
+    dbname="${dbname%%\?*}"
+    pg_isready -h "$host" -p "$port" -d "$dbname" -U "$user"
+
+check: fmt-go-check fmt-nix-check lint db-ready test sqlc-check ogen-check vendor-check flake-check
 
 # CI-specific recipes — these are the contract between reusable GitHub Actions
 # and the repository. Every repo that uses the shared actions must provide these.
 ci-lint: fmt-go-check fmt-nix-check lint sqlc-check ogen-check vendor-check flake-check
 
-ci-test: test
+ci-test: db-ready test
 
 ci-race: race
 

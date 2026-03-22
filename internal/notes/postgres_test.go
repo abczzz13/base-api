@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	internalpostgres "github.com/abczzz13/base-api/internal/postgres"
@@ -16,7 +17,7 @@ import (
 func TestPostgresRepositoryRoundTripAndPagination(t *testing.T) {
 	dbURL := strings.TrimSpace(os.Getenv("TEST_DB_URL"))
 	if dbURL == "" {
-		t.Skip("set TEST_DB_URL to run database-backed tests")
+		t.Fatal("set TEST_DB_URL to run database-backed tests")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -24,12 +25,12 @@ func TestPostgresRepositoryRoundTripAndPagination(t *testing.T) {
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		t.Skipf("PostgreSQL integration unavailable: %v", err)
+		t.Fatalf("PostgreSQL integration unavailable: %v", err)
 	}
 	t.Cleanup(pool.Close)
 
 	if err := internalpostgres.Migrate(ctx, pool); err != nil {
-		t.Skipf("PostgreSQL integration unavailable: %v", err)
+		t.Fatalf("PostgreSQL integration unavailable: %v", err)
 	}
 	if _, err := pool.Exec(ctx, "TRUNCATE TABLE notes"); err != nil {
 		t.Fatalf("truncate notes: %v", err)
@@ -151,7 +152,7 @@ func TestPostgresRepositoryRoundTripAndPagination(t *testing.T) {
 		t.Fatalf("DeleteNote returned error: %v", err)
 	}
 	_, err = repo.GetNote(ctx, created1.ID)
-	if diff := cmp.Diff(ErrNoteNotFound, err); diff != "" {
+	if diff := cmp.Diff(ErrNoteNotFound, err, cmpopts.EquateErrors()); diff != "" {
 		t.Fatalf("GetNote after delete mismatch (-want +got):\n%s", diff)
 	}
 }

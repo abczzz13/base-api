@@ -48,6 +48,7 @@
               jq
               just
               ogen
+              postgresql
               python3
               shellcheck
               sqlc

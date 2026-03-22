@@ -18,6 +18,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/logger"
 	"github.com/abczzz13/base-api/internal/middleware"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 )
 
@@ -50,6 +51,7 @@ func TestRequestLoggerCanBeDisabledForPublicHandler(t *testing.T) {
 	}, Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{}, nil
 		}),

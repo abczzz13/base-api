@@ -2,25 +2,31 @@ package publicapi
 
 import (
 	"context"
+	"errors"
 
 	"github.com/abczzz13/base-api/internal/apierrors"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/publicoas"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
 
 type oasHandler struct {
-	service *Service
+	service      *Service
+	notesService *notes.Service
 }
 
 var _ publicoas.Handler = (*oasHandler)(nil)
 
-// NewOASHandler adapts the handwritten service to the generated public transport.
-func NewOASHandler(service *Service) publicoas.Handler {
+// NewOASHandler adapts the handwritten services to the generated public transport.
+func NewOASHandler(service *Service, notesService *notes.Service) (publicoas.Handler, error) {
 	if service == nil {
-		service = NewService()
+		return nil, errors.New("service is required")
+	}
+	if notesService == nil {
+		return nil, errors.New("notes service is required")
 	}
 
-	return &oasHandler{service: service}
+	return &oasHandler{service: service, notesService: notesService}, nil
 }
 
 func (h *oasHandler) GetHealthz(ctx context.Context) (publicoas.GetHealthzRes, error) {

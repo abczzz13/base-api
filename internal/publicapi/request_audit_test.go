@@ -13,6 +13,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/middleware"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/publicapi"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 )
@@ -24,6 +25,7 @@ func TestRequestAuditOnlyWrapsPublicHandler(t *testing.T) {
 	publicHandler, err := publicapi.NewHandler(config.Config{Environment: "test"}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: auditStore,
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{}, nil
 		}),
@@ -84,6 +86,7 @@ func TestNewPublicHandlerRequiresAuditStoreWhenAuditEnabled(t *testing.T) {
 	}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: nil,
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{}, nil
 		}),
@@ -110,6 +113,7 @@ func TestNewPublicHandlerDisablesRequestAuditMiddleware(t *testing.T) {
 	}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: auditStore,
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{}, nil
 		}),
@@ -143,6 +147,7 @@ func TestNewPublicHandlerAllowsNilAuditStoreWhenAuditDisabled(t *testing.T) {
 	}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: nil,
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{}, nil
 		}),

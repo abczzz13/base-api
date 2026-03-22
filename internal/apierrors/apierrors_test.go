@@ -291,11 +291,51 @@ func (h publicExplicitErrorHandler) GetHealthz(context.Context) (publicoas.GetHe
 	return h.healthz, nil
 }
 
+func (h publicExplicitErrorHandler) CreateNote(context.Context, *publicoas.CreateNoteRequest) (publicoas.CreateNoteRes, error) {
+	return nil, errors.New("unexpected create note call")
+}
+
+func (h publicExplicitErrorHandler) DeleteNote(context.Context, publicoas.DeleteNoteParams) (publicoas.DeleteNoteRes, error) {
+	return nil, errors.New("unexpected delete note call")
+}
+
+func (h publicExplicitErrorHandler) GetNote(context.Context, publicoas.GetNoteParams) (publicoas.GetNoteRes, error) {
+	return nil, errors.New("unexpected get note call")
+}
+
+func (h publicExplicitErrorHandler) ListNotes(context.Context, publicoas.ListNotesParams) (publicoas.ListNotesRes, error) {
+	return nil, errors.New("unexpected list notes call")
+}
+
+func (h publicExplicitErrorHandler) UpdateNote(context.Context, *publicoas.UpdateNoteRequest, publicoas.UpdateNoteParams) (publicoas.UpdateNoteRes, error) {
+	return nil, errors.New("unexpected update note call")
+}
+
 func (h publicExplicitErrorHandler) NewError(context.Context, error) *publicoas.DefaultErrorStatusCodeWithHeaders {
 	return publicDefaultError(New(http.StatusInternalServerError, "internal_error", "internal server error"))
 }
 
 func (h publicErrorHandler) GetHealthz(context.Context) (publicoas.GetHealthzRes, error) {
+	return nil, h.err
+}
+
+func (h publicErrorHandler) CreateNote(context.Context, *publicoas.CreateNoteRequest) (publicoas.CreateNoteRes, error) {
+	return nil, h.err
+}
+
+func (h publicErrorHandler) DeleteNote(context.Context, publicoas.DeleteNoteParams) (publicoas.DeleteNoteRes, error) {
+	return nil, h.err
+}
+
+func (h publicErrorHandler) GetNote(context.Context, publicoas.GetNoteParams) (publicoas.GetNoteRes, error) {
+	return nil, h.err
+}
+
+func (h publicErrorHandler) ListNotes(context.Context, publicoas.ListNotesParams) (publicoas.ListNotesRes, error) {
+	return nil, h.err
+}
+
+func (h publicErrorHandler) UpdateNote(context.Context, *publicoas.UpdateNoteRequest, publicoas.UpdateNoteParams) (publicoas.UpdateNoteRes, error) {
 	return nil, h.err
 }
 

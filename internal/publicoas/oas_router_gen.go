@@ -40,6 +40,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	args := [1]string{}
 
 	// Static code generated router with unwrapped path search.
 	switch {
@@ -48,24 +49,100 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/healthz"
+		case '/': // Prefix: "/"
 
-			if l := len("/healthz"); len(elem) >= l && elem[0:l] == "/healthz" {
+			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 				elem = elem[l:]
 			} else {
 				break
 			}
 
 			if len(elem) == 0 {
-				// Leaf node.
-				switch r.Method {
-				case "GET":
-					s.handleGetHealthzRequest([0]string{}, elemIsEscaped, w, r)
-				default:
-					s.notAllowed(w, r, "GET")
+				break
+			}
+			switch elem[0] {
+			case 'h': // Prefix: "healthz"
+
+				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
+					elem = elem[l:]
+				} else {
+					break
 				}
 
-				return
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleGetHealthzRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, "GET")
+					}
+
+					return
+				}
+
+			case 'n': // Prefix: "notes"
+
+				if l := len("notes"); len(elem) >= l && elem[0:l] == "notes" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					switch r.Method {
+					case "GET":
+						s.handleListNotesRequest([0]string{}, elemIsEscaped, w, r)
+					case "POST":
+						s.handleCreateNoteRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, "GET,POST")
+					}
+
+					return
+				}
+				switch elem[0] {
+				case '/': // Prefix: "/"
+
+					if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					// Param: "noteId"
+					// Leaf parameter, slashes are prohibited
+					idx := strings.IndexByte(elem, '/')
+					if idx >= 0 {
+						break
+					}
+					args[0] = elem
+					elem = ""
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "DELETE":
+							s.handleDeleteNoteRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						case "GET":
+							s.handleGetNoteRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						case "PATCH":
+							s.handleUpdateNoteRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "DELETE,GET,PATCH")
+						}
+
+						return
+					}
+
+				}
+
 			}
 
 		}
@@ -81,7 +158,7 @@ type Route struct {
 	operationGroup string
 	pathPattern    string
 	count          int
-	args           [0]string
+	args           [1]string
 }
 
 // Name returns ogen operation name.
@@ -154,29 +231,130 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/healthz"
+		case '/': // Prefix: "/"
 
-			if l := len("/healthz"); len(elem) >= l && elem[0:l] == "/healthz" {
+			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 				elem = elem[l:]
 			} else {
 				break
 			}
 
 			if len(elem) == 0 {
-				// Leaf node.
-				switch method {
-				case "GET":
-					r.name = GetHealthzOperation
-					r.summary = "Public health endpoint"
-					r.operationID = "getHealthz"
-					r.operationGroup = "Base"
-					r.pathPattern = "/healthz"
-					r.args = args
-					r.count = 0
-					return r, true
-				default:
-					return
+				break
+			}
+			switch elem[0] {
+			case 'h': // Prefix: "healthz"
+
+				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
+					elem = elem[l:]
+				} else {
+					break
 				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = GetHealthzOperation
+						r.summary = "Public health endpoint"
+						r.operationID = "getHealthz"
+						r.operationGroup = "Base"
+						r.pathPattern = "/healthz"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
+			case 'n': // Prefix: "notes"
+
+				if l := len("notes"); len(elem) >= l && elem[0:l] == "notes" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					switch method {
+					case "GET":
+						r.name = ListNotesOperation
+						r.summary = "List weather-enriched notes"
+						r.operationID = "listNotes"
+						r.operationGroup = "Notes"
+						r.pathPattern = "/notes"
+						r.args = args
+						r.count = 0
+						return r, true
+					case "POST":
+						r.name = CreateNoteOperation
+						r.summary = "Create a weather-enriched note"
+						r.operationID = "createNote"
+						r.operationGroup = "Notes"
+						r.pathPattern = "/notes"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+				switch elem[0] {
+				case '/': // Prefix: "/"
+
+					if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					// Param: "noteId"
+					// Leaf parameter, slashes are prohibited
+					idx := strings.IndexByte(elem, '/')
+					if idx >= 0 {
+						break
+					}
+					args[0] = elem
+					elem = ""
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "DELETE":
+							r.name = DeleteNoteOperation
+							r.summary = "Delete a note by ID"
+							r.operationID = "deleteNote"
+							r.operationGroup = "Notes"
+							r.pathPattern = "/notes/{noteId}"
+							r.args = args
+							r.count = 1
+							return r, true
+						case "GET":
+							r.name = GetNoteOperation
+							r.summary = "Get a note by ID"
+							r.operationID = "getNote"
+							r.operationGroup = "Notes"
+							r.pathPattern = "/notes/{noteId}"
+							r.args = args
+							r.count = 1
+							return r, true
+						case "PATCH":
+							r.name = UpdateNoteOperation
+							r.summary = "Update a note by ID"
+							r.operationID = "updateNote"
+							r.operationGroup = "Notes"
+							r.pathPattern = "/notes/{noteId}"
+							r.args = args
+							r.count = 1
+							return r, true
+						default:
+							return
+						}
+					}
+
+				}
+
 			}
 
 		}

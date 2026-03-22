@@ -14,6 +14,7 @@ import (
 	"github.com/abczzz13/base-api/internal/config"
 	"github.com/abczzz13/base-api/internal/infraapi"
 	"github.com/abczzz13/base-api/internal/middleware"
+	"github.com/abczzz13/base-api/internal/notes"
 	"github.com/abczzz13/base-api/internal/publicapi"
 	"github.com/abczzz13/base-api/internal/requestaudit"
 )
@@ -28,6 +29,7 @@ func TestRequestMetricsUseLowCardinalityRouteLabels(t *testing.T) {
 	publicHandler, err := publicapi.NewHandler(config.Config{Environment: "test"}, publicapi.Dependencies{
 		RequestMetrics:         requestMetrics,
 		RequestAuditRepository: requestaudit.NopRepository(),
+		NotesRepository:        notes.RepositoryFuncs{},
 		WeatherClient: weather.ClientFunc(func(context.Context, string) (weather.CurrentWeather, error) {
 			return weather.CurrentWeather{}, nil
 		}),

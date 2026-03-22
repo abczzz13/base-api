@@ -24,6 +24,137 @@ paths:
           $ref: "#/components/responses/ServiceUnavailableError"
         default:
           $ref: "#/components/responses/DefaultError"
+  /notes:
+    x-ogen-operation-group: Notes
+    get:
+      operationId: listNotes
+      summary: List weather-enriched notes
+      parameters:
+        - in: query
+          name: limit
+          description: Maximum number of notes to return.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: cursor
+          description: Opaque cursor returned by a previous list response.
+          schema:
+            type: string
+            minLength: 1
+            pattern: '\S'
+      responses:
+        "200":
+          description: Note page
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListNotesResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        default:
+          $ref: "#/components/responses/DefaultError"
+    post:
+      operationId: createNote
+      summary: Create a weather-enriched note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNoteRequest"
+      responses:
+        "201":
+          description: Note created
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        default:
+          $ref: "#/components/responses/DefaultError"
+  /notes/{noteId}:
+    x-ogen-operation-group: Notes
+    parameters:
+      - in: path
+        name: noteId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getNote
+      summary: Get a note by ID
+      responses:
+        "200":
+          description: Note found
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        default:
+          $ref: "#/components/responses/DefaultError"
+    patch:
+      operationId: updateNote
+      summary: Update a note by ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNoteRequest"
+      responses:
+        "200":
+          description: Note updated
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        default:
+          $ref: "#/components/responses/DefaultError"
+    delete:
+      operationId: deleteNote
+      summary: Delete a note by ID
+      responses:
+        "204":
+          description: Note deleted
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        default:
+          $ref: "#/components/responses/DefaultError"
 components:
   headers:
     RequestId:
@@ -83,6 +214,108 @@ components:
         - status
       properties:
         status:
+          type: string
+    Note:
+      type: object
+      required:
+        - id
+        - title
+        - body
+        - locationQuery
+        - resolvedLocation
+        - weather
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        locationQuery:
+          type: string
+        resolvedLocation:
+          type: string
+        weather:
+          $ref: "#/components/schemas/NoteWeatherSnapshot"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    NoteWeatherSnapshot:
+      type: object
+      required:
+        - provider
+        - condition
+        - temperatureC
+        - observedAt
+      properties:
+        provider:
+          type: string
+        condition:
+          type: string
+        temperatureC:
+          type: number
+          format: double
+        observedAt:
+          type: string
+          format: date-time
+    CreateNoteRequest:
+      type: object
+      required:
+        - title
+        - body
+        - location
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          pattern: '\S'
+        location:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+    UpdateNoteRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          pattern: '\S'
+        location:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+    ListNotesResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Note"
+        nextCursor:
           type: string
     ErrorResponse:
       type: object

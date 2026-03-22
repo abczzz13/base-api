@@ -4,10 +4,50 @@ package publicoas
 
 import (
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 func (s *DefaultErrorStatusCodeWithHeaders) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
+}
+
+// Ref: #/components/schemas/CreateNoteRequest
+type CreateNoteRequest struct {
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	Location string `json:"location"`
+}
+
+// GetTitle returns the value of Title.
+func (s *CreateNoteRequest) GetTitle() string {
+	return s.Title
+}
+
+// GetBody returns the value of Body.
+func (s *CreateNoteRequest) GetBody() string {
+	return s.Body
+}
+
+// GetLocation returns the value of Location.
+func (s *CreateNoteRequest) GetLocation() string {
+	return s.Location
+}
+
+// SetTitle sets the value of Title.
+func (s *CreateNoteRequest) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetBody sets the value of Body.
+func (s *CreateNoteRequest) SetBody(val string) {
+	s.Body = val
+}
+
+// SetLocation sets the value of Location.
+func (s *CreateNoteRequest) SetLocation(val string) {
+	s.Location = val
 }
 
 // DefaultErrorStatusCodeWithHeaders wraps ErrorResponse with status code and response headers.
@@ -46,6 +86,23 @@ func (s *DefaultErrorStatusCodeWithHeaders) SetXRequestID(val OptString) {
 func (s *DefaultErrorStatusCodeWithHeaders) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
+
+// DeleteNoteNoContent is response for DeleteNote operation.
+type DeleteNoteNoContent struct {
+	XRequestID OptString
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *DeleteNoteNoContent) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *DeleteNoteNoContent) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+func (*DeleteNoteNoContent) deleteNoteRes() {}
 
 // Ref: #/components/schemas/ErrorResponse
 type ErrorResponse struct {
@@ -127,6 +184,276 @@ func (s *HealthResponseHeaders) SetResponse(val HealthResponse) {
 
 func (*HealthResponseHeaders) getHealthzRes() {}
 
+// Ref: #/components/schemas/ListNotesResponse
+type ListNotesResponse struct {
+	Items      []Note    `json:"items"`
+	NextCursor OptString `json:"nextCursor"`
+}
+
+// GetItems returns the value of Items.
+func (s *ListNotesResponse) GetItems() []Note {
+	return s.Items
+}
+
+// GetNextCursor returns the value of NextCursor.
+func (s *ListNotesResponse) GetNextCursor() OptString {
+	return s.NextCursor
+}
+
+// SetItems sets the value of Items.
+func (s *ListNotesResponse) SetItems(val []Note) {
+	s.Items = val
+}
+
+// SetNextCursor sets the value of NextCursor.
+func (s *ListNotesResponse) SetNextCursor(val OptString) {
+	s.NextCursor = val
+}
+
+// ListNotesResponseHeaders wraps ListNotesResponse with response headers.
+type ListNotesResponseHeaders struct {
+	XRequestID OptString
+	Response   ListNotesResponse
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *ListNotesResponseHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *ListNotesResponseHeaders) GetResponse() ListNotesResponse {
+	return s.Response
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *ListNotesResponseHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *ListNotesResponseHeaders) SetResponse(val ListNotesResponse) {
+	s.Response = val
+}
+
+func (*ListNotesResponseHeaders) listNotesRes() {}
+
+// Ref: #/components/schemas/Note
+type Note struct {
+	ID               uuid.UUID           `json:"id"`
+	Title            string              `json:"title"`
+	Body             string              `json:"body"`
+	LocationQuery    string              `json:"locationQuery"`
+	ResolvedLocation string              `json:"resolvedLocation"`
+	Weather          NoteWeatherSnapshot `json:"weather"`
+	CreatedAt        time.Time           `json:"createdAt"`
+	UpdatedAt        time.Time           `json:"updatedAt"`
+}
+
+// GetID returns the value of ID.
+func (s *Note) GetID() uuid.UUID {
+	return s.ID
+}
+
+// GetTitle returns the value of Title.
+func (s *Note) GetTitle() string {
+	return s.Title
+}
+
+// GetBody returns the value of Body.
+func (s *Note) GetBody() string {
+	return s.Body
+}
+
+// GetLocationQuery returns the value of LocationQuery.
+func (s *Note) GetLocationQuery() string {
+	return s.LocationQuery
+}
+
+// GetResolvedLocation returns the value of ResolvedLocation.
+func (s *Note) GetResolvedLocation() string {
+	return s.ResolvedLocation
+}
+
+// GetWeather returns the value of Weather.
+func (s *Note) GetWeather() NoteWeatherSnapshot {
+	return s.Weather
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *Note) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *Note) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetID sets the value of ID.
+func (s *Note) SetID(val uuid.UUID) {
+	s.ID = val
+}
+
+// SetTitle sets the value of Title.
+func (s *Note) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetBody sets the value of Body.
+func (s *Note) SetBody(val string) {
+	s.Body = val
+}
+
+// SetLocationQuery sets the value of LocationQuery.
+func (s *Note) SetLocationQuery(val string) {
+	s.LocationQuery = val
+}
+
+// SetResolvedLocation sets the value of ResolvedLocation.
+func (s *Note) SetResolvedLocation(val string) {
+	s.ResolvedLocation = val
+}
+
+// SetWeather sets the value of Weather.
+func (s *Note) SetWeather(val NoteWeatherSnapshot) {
+	s.Weather = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *Note) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *Note) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// NoteHeaders wraps Note with response headers.
+type NoteHeaders struct {
+	XRequestID OptString
+	Response   Note
+}
+
+// GetXRequestID returns the value of XRequestID.
+func (s *NoteHeaders) GetXRequestID() OptString {
+	return s.XRequestID
+}
+
+// GetResponse returns the value of Response.
+func (s *NoteHeaders) GetResponse() Note {
+	return s.Response
+}
+
+// SetXRequestID sets the value of XRequestID.
+func (s *NoteHeaders) SetXRequestID(val OptString) {
+	s.XRequestID = val
+}
+
+// SetResponse sets the value of Response.
+func (s *NoteHeaders) SetResponse(val Note) {
+	s.Response = val
+}
+
+func (*NoteHeaders) createNoteRes() {}
+func (*NoteHeaders) getNoteRes()    {}
+func (*NoteHeaders) updateNoteRes() {}
+
+// Ref: #/components/schemas/NoteWeatherSnapshot
+type NoteWeatherSnapshot struct {
+	Provider     string    `json:"provider"`
+	Condition    string    `json:"condition"`
+	TemperatureC float64   `json:"temperatureC"`
+	ObservedAt   time.Time `json:"observedAt"`
+}
+
+// GetProvider returns the value of Provider.
+func (s *NoteWeatherSnapshot) GetProvider() string {
+	return s.Provider
+}
+
+// GetCondition returns the value of Condition.
+func (s *NoteWeatherSnapshot) GetCondition() string {
+	return s.Condition
+}
+
+// GetTemperatureC returns the value of TemperatureC.
+func (s *NoteWeatherSnapshot) GetTemperatureC() float64 {
+	return s.TemperatureC
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *NoteWeatherSnapshot) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// SetProvider sets the value of Provider.
+func (s *NoteWeatherSnapshot) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetCondition sets the value of Condition.
+func (s *NoteWeatherSnapshot) SetCondition(val string) {
+	s.Condition = val
+}
+
+// SetTemperatureC sets the value of TemperatureC.
+func (s *NoteWeatherSnapshot) SetTemperatureC(val float64) {
+	s.TemperatureC = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *NoteWeatherSnapshot) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+// NewOptInt32 returns new OptInt32 with value set to v.
+func NewOptInt32(v int32) OptInt32 {
+	return OptInt32{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptInt32 is optional int32.
+type OptInt32 struct {
+	Value int32
+	Set   bool
+}
+
+// IsSet returns true if OptInt32 was set.
+func (o OptInt32) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptInt32) Reset() {
+	var v int32
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptInt32) SetTo(v int32) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptInt32) Get() (v int32, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptInt32) Or(d int32) int32 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -199,7 +526,12 @@ func (s *ServiceUnavailableErrorHeaders) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
+func (*ServiceUnavailableErrorHeaders) createNoteRes() {}
+func (*ServiceUnavailableErrorHeaders) deleteNoteRes() {}
 func (*ServiceUnavailableErrorHeaders) getHealthzRes() {}
+func (*ServiceUnavailableErrorHeaders) getNoteRes()    {}
+func (*ServiceUnavailableErrorHeaders) listNotesRes()  {}
+func (*ServiceUnavailableErrorHeaders) updateNoteRes() {}
 
 // TooManyRequestsErrorHeaders wraps ErrorResponse with response headers.
 type TooManyRequestsErrorHeaders struct {
@@ -260,4 +592,46 @@ func (s *TooManyRequestsErrorHeaders) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
+func (*TooManyRequestsErrorHeaders) createNoteRes() {}
+func (*TooManyRequestsErrorHeaders) deleteNoteRes() {}
 func (*TooManyRequestsErrorHeaders) getHealthzRes() {}
+func (*TooManyRequestsErrorHeaders) getNoteRes()    {}
+func (*TooManyRequestsErrorHeaders) listNotesRes()  {}
+func (*TooManyRequestsErrorHeaders) updateNoteRes() {}
+
+// Ref: #/components/schemas/UpdateNoteRequest
+type UpdateNoteRequest struct {
+	Title    OptString `json:"title"`
+	Body     OptString `json:"body"`
+	Location OptString `json:"location"`
+}
+
+// GetTitle returns the value of Title.
+func (s *UpdateNoteRequest) GetTitle() OptString {
+	return s.Title
+}
+
+// GetBody returns the value of Body.
+func (s *UpdateNoteRequest) GetBody() OptString {
+	return s.Body
+}
+
+// GetLocation returns the value of Location.
+func (s *UpdateNoteRequest) GetLocation() OptString {
+	return s.Location
+}
+
+// SetTitle sets the value of Title.
+func (s *UpdateNoteRequest) SetTitle(val OptString) {
+	s.Title = val
+}
+
+// SetBody sets the value of Body.
+func (s *UpdateNoteRequest) SetBody(val OptString) {
+	s.Body = val
+}
+
+// SetLocation sets the value of Location.
+func (s *UpdateNoteRequest) SetLocation(val OptString) {
+	s.Location = val
+}

@@ -2,6 +2,7 @@ package weatherapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 
@@ -18,12 +19,12 @@ type oasHandler struct {
 var _ weatheroas.Handler = (*oasHandler)(nil)
 
 // NewOASHandler adapts the handwritten weather service to the generated weather transport.
-func NewOASHandler(service *Service) weatheroas.Handler {
+func NewOASHandler(service *Service) (weatheroas.Handler, error) {
 	if service == nil {
-		service = NewService(nil)
+		return nil, errors.New("service is required")
 	}
 
-	return &oasHandler{service: service}
+	return &oasHandler{service: service}, nil
 }
 
 func (h *oasHandler) GetCurrentWeather(ctx context.Context, params weatheroas.GetCurrentWeatherParams) (weatheroas.GetCurrentWeatherRes, error) {

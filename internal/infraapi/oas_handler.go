@@ -2,9 +2,9 @@ package infraapi
 
 import (
 	"context"
+	"errors"
 
 	"github.com/abczzz13/base-api/internal/apierrors"
-	"github.com/abczzz13/base-api/internal/config"
 	geninfra "github.com/abczzz13/base-api/internal/infraoas"
 	"github.com/abczzz13/base-api/internal/requestid"
 )
@@ -16,12 +16,12 @@ type oasHandler struct {
 var _ geninfra.Handler = (*oasHandler)(nil)
 
 // NewOASHandler adapts the handwritten service to the generated infra transport.
-func NewOASHandler(service *Service) geninfra.Handler {
+func NewOASHandler(service *Service) (geninfra.Handler, error) {
 	if service == nil {
-		service = NewService(config.Config{})
+		return nil, errors.New("service is required")
 	}
 
-	return &oasHandler{service: service}
+	return &oasHandler{service: service}, nil
 }
 
 func (h *oasHandler) GetLivez(ctx context.Context) (*geninfra.ProbeResponseHeaders, error) {

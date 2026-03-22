@@ -7,6 +7,7 @@ package dbsqlc
 import (
 	"net/netip"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -64,4 +65,18 @@ type HttpRequestAudit struct {
 	TraceID               string             `json:"trace_id"`
 	SpanID                string             `json:"span_id"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type Note struct {
+	ID                  uuid.UUID          `json:"id"`
+	Title               string             `json:"title"`
+	Body                string             `json:"body"`
+	LocationQuery       string             `json:"location_query"`
+	ResolvedLocation    string             `json:"resolved_location"`
+	WeatherProvider     string             `json:"weather_provider"`
+	WeatherCondition    string             `json:"weather_condition"`
+	WeatherTemperatureC float64            `json:"weather_temperature_c"`
+	WeatherObservedAt   pgtype.Timestamptz `json:"weather_observed_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }

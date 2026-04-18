@@ -354,6 +354,17 @@ func (c *dedicatedSingleClient) SetPubSubHooks(hooks PubSubHooks) <-chan error {
 	return c.wire.SetPubSubHooks(hooks)
 }
 
+func (c *dedicatedSingleClient) SetOnInvalidations(fn func([]ValkeyMessage)) <-chan error {
+	if err := c.check(); err != nil {
+		ch := make(chan error, 1)
+		ch <- err
+		return ch
+	}
+	hooks := c.wire.GetPubSubHooks()
+	hooks.onInvalidations = fn
+	return c.SetPubSubHooks(hooks)
+}
+
 func (c *dedicatedSingleClient) Close() {
 	c.wire.Close()
 	c.release()
@@ -402,7 +413,7 @@ func allRetryable(multi []Completed) bool {
 }
 
 func chooseSlot(multi []Completed) uint16 {
-	for i := 0; i < len(multi); i++ {
+	for i := range multi {
 		if multi[i].Slot() != cmds.InitSlot {
 			for j := i + 1; j < len(multi); j++ {
 				if multi[j].Slot() != cmds.InitSlot && multi[j].Slot() != multi[i].Slot() {

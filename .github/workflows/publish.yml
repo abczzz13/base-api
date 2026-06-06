@@ -44,7 +44,7 @@ jobs:
       version_value: ${{ steps.vars.outputs.version_value }}
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Prepare / Workspace
         uses: ./.github/actions/prepare-workspace
@@ -71,7 +71,7 @@ jobs:
         include: ${{ fromJson(needs.image_metadata.outputs.scan_matrix) }}
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Prepare / Workspace
         uses: ./.github/actions/prepare-workspace
@@ -174,7 +174,7 @@ jobs:
       image_ref: ${{ steps.record.outputs.image_ref }}
     steps:
       - name: Prepare / Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Prepare / Workspace
         uses: ./.github/actions/prepare-workspace
